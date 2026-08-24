@@ -525,6 +525,34 @@ void MyMesh::sendFloodScoped(const mesh::GroupChannel& channel, mesh::Packet* pk
 void MyMesh::onMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t sender_timestamp,
                            const char *text) {
   markConnectionActive(from); // in case this is from a server, and we have a connection
+
+  // Bot: handle !echo command
+  if (text && text[0] == '!' && strncmp(text, "!echo ", 6) == 0) {
+    const char* echo_text = text + 6;  // Skip "!echo "
+
+    // Create reply message: "Echo: <text>"
+    char reply[MAX_TEXT_LEN + 1];
+    snprintf(reply, sizeof(reply), "Echo: %s", echo_text);
+
+    // Send reply back to sender
+    if (from.out_path_len != OUT_PATH_UNKNOWN) {
+      // Create message packet with current timestamp
+      uint8_t temp[5 + MAX_TEXT_LEN + 1];
+      uint32_t timestamp = getRTCClock()->getCurrentTime();
+      memcpy(temp, &timestamp, 4);
+      temp[4] = 0;  // attempt = 0
+      size_t reply_len = strlen(reply);
+      memcpy(&temp[5], reply, reply_len + 1);
+
+      auto reply_pkt = createDatagram(PAYLOAD_TYPE_TXT_MSG, from.id,
+                                      from.getSharedSecret(self_id), temp, 5 + reply_len);
+      if (reply_pkt) {
+        sendDirect(reply_pkt, from.out_path, from.out_path_len);
+        Serial.printf("[BOT] Sent echo reply to %s\n", from.name);
+      }
+    }
+  }
+
   queueMessage(from, TXT_TYPE_PLAIN, pkt, sender_timestamp, NULL, 0, text);
 }
 

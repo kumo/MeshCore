@@ -8,7 +8,10 @@
 
 // Forward declarations
 class ContactInfo;
-namespace mesh { class Packet; }
+namespace mesh {
+  class Packet;
+  class GroupChannel;
+}
 class MyMesh;
 
 // Initialize bot handler with data store
@@ -24,3 +27,8 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len);
 // Handle bot commands in direct messages
 // Returns true if command was handled and reply sent
 bool botHandleDM(MyMesh& mesh, const ContactInfo& from, mesh::Packet* pkt, const char* text);
+
+// Handle bot commands in channels
+// Returns true if command was handled and reply sent
+// Only handles commands in allowed channels: #bot, #test, #prove
+bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel& channel, const char* text);

@@ -127,3 +127,50 @@ bool botHandleDM(MyMesh& mesh, const ContactInfo& from, mesh::Packet* pkt, const
 
   return false;  // Not a bot command
 }
+
+bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel& channel, const char* text) {
+  if (channel_name == nullptr || text == nullptr) {
+    Serial.printf("[BOT] Channel handler called: channel=%s, text=%s\n",
+                  channel_name ? channel_name : "null",
+                  text ? text : "null");
+    return false;
+  }
+
+  Serial.printf("[BOT] Channel: %s, Text: %s\n", channel_name, text);
+
+  // Only respond in allowed channels
+  if (strcmp(channel_name, "#bot") != 0 &&
+      strcmp(channel_name, "#test") != 0 &&
+      strcmp(channel_name, "#prove") != 0) {
+    Serial.printf("[BOT] Not an allowed channel, ignoring\n");
+    return false;  // Not an allowed channel
+  }
+
+  // Skip sender prefix "Name: " in channel messages
+  const char* message = strchr(text, ':');
+  if (message != nullptr) {
+    message++;  // Skip the ':'
+    while (*message == ' ') message++;  // Skip spaces after ':'
+  } else {
+    message = text;  // No prefix, use whole text
+  }
+
+  Serial.printf("[BOT] Parsed message: %s\n", message);
+
+  // Handle !echo command
+  if (message[0] == '!' && strncmp(message, "!echo ", 6) == 0) {
+    const char* echo_text = message + 6;  // Skip "!echo "
+
+    // Create reply message: "Echo: <text>"
+    char reply[MAX_TEXT_LEN + 1];
+    snprintf(reply, sizeof(reply), "[BOT] Echo: %s", echo_text);
+
+    uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
+    if (mesh.sendGroupMessage(timestamp, channel, "Bot", reply, strlen(reply))) {
+      Serial.printf("[BOT] Sent echo reply to channel %s\n", channel_name);
+    }
+    return true;
+  }
+
+  return false;  // Not a bot command
+}

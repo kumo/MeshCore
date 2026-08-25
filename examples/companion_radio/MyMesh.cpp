@@ -573,6 +573,17 @@ void MyMesh::onSignedMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uin
 
 void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packet *pkt, uint32_t timestamp,
                                   const char *text) {
+  // If bot enabled, check for bot commands in allowed channels
+  if (text && botIsEnabled()) {
+    uint8_t channel_idx = findChannelIdx(channel);
+    ChannelDetails channel_details;
+    if (getChannel(channel_idx, channel_details)) {
+      if (botHandleChannel(*this, channel_details.name, const_cast<mesh::GroupChannel&>(channel), text)) {
+        return;  // Bot handled it, don't queue to companion app
+      }
+    }
+  }
+
   int i = 0;
   if (app_target_ver >= 3) {
     out_frame[i++] = RESP_CODE_CHANNEL_MSG_RECV_V3;

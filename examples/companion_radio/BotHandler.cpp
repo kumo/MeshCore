@@ -141,6 +141,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
   // Only respond in allowed channels
   if (strcmp(channel_name, "#bot") != 0 &&
       strcmp(channel_name, "#test") != 0 &&
+      strcmp(channel_name, "#ping") != 0 &&
       strcmp(channel_name, "#prove") != 0) {
     Serial.printf("[BOT] Not an allowed channel, ignoring\n");
     return false;  // Not an allowed channel
@@ -164,6 +165,19 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
   }
 
   Serial.printf("[BOT] Sender: %s, Message: %s\n", sender_name, message);
+
+  // Handle !ping command (case-insensitive)
+  if ((message[0] == '!' && (strncasecmp(message, "!ping", 5) == 0 && (message[5] == '\0' || message[5] == ' '))) ||
+      (strcasecmp(message, "ping") == 0)) {
+    char reply[MAX_TEXT_LEN + 1];
+    snprintf(reply, sizeof(reply), "@[%s] pong 🤖", sender_name);
+
+    uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
+    if (mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply))) {
+      Serial.printf("[BOT] Sent ping reply to channel %s\n", channel_name);
+    }
+    return true;
+  }
 
   // Handle !echo command
   if (message[0] == '!' && strncmp(message, "!echo ", 6) == 0) {

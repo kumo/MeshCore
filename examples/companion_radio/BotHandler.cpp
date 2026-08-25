@@ -218,11 +218,12 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
 
     // Get hop count from packet
     uint8_t hop_count = pkt->getPathHashCount();
+    uint8_t hash_size = pkt->getPathHashSize();
     const char* location = botGetLocation();
 
     // Format based on channel
     if (strcmp(channel_name, "#bot") == 0) {
-      // Detailed format for #bot channel
+      // Detailed format for #bot channel with path
       if (hop_count == 0) {
         if (location[0] != '\0') {
           snprintf(reply, sizeof(reply), "@[%s] direct a %s 🤖", sender_name, location);
@@ -230,12 +231,32 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
           snprintf(reply, sizeof(reply), "@[%s] direct 🤖", sender_name);
         }
       } else {
+        // Build path string with hex hashes
+        char path_str[128] = {0};
+        char* out = path_str;
+        size_t remaining = sizeof(path_str);
+
+        for (uint8_t i = 0; i < hop_count && remaining > 10; i++) {
+          if (i > 0) {
+            int written = snprintf(out, remaining, "→");
+            out += written;
+            remaining -= written;
+          }
+
+          const uint8_t* hash = &pkt->path[i * hash_size];
+          for (uint8_t j = 0; j < hash_size && remaining > 3; j++) {
+            int written = snprintf(out, remaining, "%02x", hash[j]);
+            out += written;
+            remaining -= written;
+          }
+        }
+
         if (location[0] != '\0') {
-          snprintf(reply, sizeof(reply), "@[%s] %d %s a %s 🤖",
-                   sender_name, hop_count, hop_count == 1 ? "hop" : "hops", location);
+          snprintf(reply, sizeof(reply), "@[%s] %d %s %s a %s 🤖",
+                   sender_name, hop_count, hop_count == 1 ? "hop" : "hops", path_str, location);
         } else {
-          snprintf(reply, sizeof(reply), "@[%s] %d %s 🤖",
-                   sender_name, hop_count, hop_count == 1 ? "hop" : "hops");
+          snprintf(reply, sizeof(reply), "@[%s] %d %s %s 🤖",
+                   sender_name, hop_count, hop_count == 1 ? "hop" : "hops", path_str);
         }
       }
     } else {

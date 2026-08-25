@@ -1,4 +1,5 @@
 #include "MyMesh.h"
+#include "BotHandler.h"
 
 #include <Arduino.h> // needed for PlatformIO
 #include <Mesh.h>
@@ -526,17 +527,11 @@ void MyMesh::onMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t 
                            const char *text) {
   markConnectionActive(from); // in case this is from a server, and we have a connection
 
-  // Bot: handle !echo command
-  if (text && text[0] == '!' && strncmp(text, "!echo ", 6) == 0) {
-    const char* echo_text = text + 6;  // Skip "!echo "
-
-    // Create reply message: "Echo: <text>"
-    char reply[MAX_TEXT_LEN + 1];
-    snprintf(reply, sizeof(reply), "Echo: %s", echo_text);
-
-    // Send reply back to sender
+  // Check for !bot configuration commands
+  char reply[MAX_TEXT_LEN + 1];
+  if (text && botHandleConfig(text, reply, sizeof(reply))) {
+    // Send configuration response
     if (from.out_path_len != OUT_PATH_UNKNOWN) {
-      // Create message packet with current timestamp
       uint8_t temp[5 + MAX_TEXT_LEN + 1];
       uint32_t timestamp = getRTCClock()->getCurrentTime();
       memcpy(temp, &timestamp, 4);
@@ -548,9 +543,15 @@ void MyMesh::onMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t 
                                       from.getSharedSecret(self_id), temp, 5 + reply_len);
       if (reply_pkt) {
         sendDirect(reply_pkt, from.out_path, from.out_path_len);
-        Serial.printf("[BOT] Sent echo reply to %s\n", from.name);
+        Serial.printf("[BOT] Sent config reply to %s\n", from.name);
       }
     }
+    return;  // Don't queue bot config commands
+  }
+
+  // If bot enabled, handle bot commands
+  if (text && botIsEnabled() && botHandleDM(*this, from, pkt, text)) {
+    return;  // Don't queue bot commands
   }
 
   queueMessage(from, TXT_TYPE_PLAIN, pkt, sender_timestamp, NULL, 0, text);
@@ -928,6 +929,9 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
 
 void MyMesh::begin(bool has_display) {
   BaseChatMesh::begin();
+
+  // Initialize bot handler
+  botInit();
 
   if (!_store->loadMainIdentity(self_id)) {
     self_id = radio_new_identity(); // create new random identity

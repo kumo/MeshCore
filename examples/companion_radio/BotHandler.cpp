@@ -146,24 +146,32 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
     return false;  // Not an allowed channel
   }
 
-  // Skip sender prefix "Name: " in channel messages
+  // Extract sender name and message from "SenderName: message" format
+  static char sender_name[64];
   const char* message = strchr(text, ':');
   if (message != nullptr) {
+    // Extract sender name
+    size_t name_len = message - text;
+    if (name_len >= sizeof(sender_name)) name_len = sizeof(sender_name) - 1;
+    memcpy(sender_name, text, name_len);
+    sender_name[name_len] = '\0';
+
     message++;  // Skip the ':'
     while (*message == ' ') message++;  // Skip spaces after ':'
   } else {
+    sender_name[0] = '\0';  // No sender name found
     message = text;  // No prefix, use whole text
   }
 
-  Serial.printf("[BOT] Parsed message: %s\n", message);
+  Serial.printf("[BOT] Sender: %s, Message: %s\n", sender_name, message);
 
   // Handle !echo command
   if (message[0] == '!' && strncmp(message, "!echo ", 6) == 0) {
     const char* echo_text = message + 6;  // Skip "!echo "
 
-    // Create reply message: "Echo: <text>"
+    // Create reply message: "@[Sender] Echo: <text> 🤖"
     char reply[MAX_TEXT_LEN + 1];
-    snprintf(reply, sizeof(reply), "[BOT] Echo: %s", echo_text);
+    snprintf(reply, sizeof(reply), "@[%s] Echo: %s 🤖", sender_name, echo_text);
 
     uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
     if (mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply))) {

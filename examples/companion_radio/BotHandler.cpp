@@ -159,8 +159,9 @@ bool botHandleDM(MyMesh& mesh, const ContactInfo& from, mesh::Packet* pkt, const
   return false;  // Not a bot command
 }
 
-bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel& channel, const char* text) {
-  if (channel_name == nullptr || text == nullptr) {
+bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel& channel,
+                      mesh::Packet* pkt, const char* text) {
+  if (channel_name == nullptr || text == nullptr || pkt == nullptr) {
     Serial.printf("[BOT] Channel handler called: channel=%s, text=%s\n",
                   channel_name ? channel_name : "null",
                   text ? text : "null");
@@ -206,6 +207,59 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
     uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
     if (mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply))) {
       Serial.printf("[BOT] Sent ping reply to channel %s\n", channel_name);
+    }
+    return true;
+  }
+
+  // Handle !test or test command (case-insensitive)
+  if ((message[0] == '!' && (strncasecmp(message, "!test", 5) == 0 && (message[5] == '\0' || message[5] == ' '))) ||
+      (strcasecmp(message, "test") == 0)) {
+    char reply[MAX_TEXT_LEN + 1];
+
+    // Get hop count from packet
+    uint8_t hop_count = pkt->getPathHashCount();
+    const char* location = botGetLocation();
+
+    // Format based on channel
+    if (strcmp(channel_name, "#bot") == 0) {
+      // Detailed format for #bot channel
+      if (hop_count == 0) {
+        if (location[0] != '\0') {
+          snprintf(reply, sizeof(reply), "@[%s] direct a %s 🤖", sender_name, location);
+        } else {
+          snprintf(reply, sizeof(reply), "@[%s] direct 🤖", sender_name);
+        }
+      } else {
+        if (location[0] != '\0') {
+          snprintf(reply, sizeof(reply), "@[%s] %d %s a %s 🤖",
+                   sender_name, hop_count, hop_count == 1 ? "hop" : "hops", location);
+        } else {
+          snprintf(reply, sizeof(reply), "@[%s] %d %s 🤖",
+                   sender_name, hop_count, hop_count == 1 ? "hop" : "hops");
+        }
+      }
+    } else {
+      // Simple format for other channels
+      if (hop_count == 0) {
+        if (location[0] != '\0') {
+          snprintf(reply, sizeof(reply), "@[%s] direct a %s 🤖", sender_name, location);
+        } else {
+          snprintf(reply, sizeof(reply), "@[%s] direct 🤖", sender_name);
+        }
+      } else {
+        if (location[0] != '\0') {
+          snprintf(reply, sizeof(reply), "@[%s] %d %s a %s 🤖",
+                   sender_name, hop_count, hop_count == 1 ? "hop" : "hops", location);
+        } else {
+          snprintf(reply, sizeof(reply), "@[%s] %d %s 🤖",
+                   sender_name, hop_count, hop_count == 1 ? "hop" : "hops");
+        }
+      }
+    }
+
+    uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
+    if (mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply))) {
+      Serial.printf("[BOT] Sent test reply to channel %s\n", channel_name);
     }
     return true;
   }

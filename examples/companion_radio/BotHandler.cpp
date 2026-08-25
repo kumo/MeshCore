@@ -343,6 +343,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       // Debug logging for 2-byte and 3-byte hashes
       Serial.printf("[BOT] Path command with %d-byte hashes, %d hops:\n", hash_size, hop_count);
 
+      uint8_t found_count = 0;
       for (uint8_t i = 0; i < hop_count; i++) {
         const uint8_t* hash = &pkt->path[i * hash_size];
 
@@ -356,10 +357,13 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
         ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
         if (contact) {
           Serial.printf(" -> Found: %s\n", contact->name);
+          found_count++;
         } else {
           Serial.printf(" -> Not found\n");
         }
       }
+
+      Serial.printf("[BOT] Path resolution: %d/%d hops found\n", found_count, hop_count);
     }
     return true;  // Command was handled (even if we didn't reply)
   }

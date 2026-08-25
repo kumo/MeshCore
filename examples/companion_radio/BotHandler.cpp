@@ -131,8 +131,8 @@ bool botHandleDM(MyMesh& mesh, const ContactInfo& from, mesh::Packet* pkt, const
     return false;
   }
 
-  // Handle !echo command
-  if (text[0] == '!' && strncmp(text, "!echo ", 6) == 0) {
+  // Handle !echo command (case-insensitive)
+  if (strncasecmp(text, "!echo ", 6) == 0) {
     const char* echo_text = text + 6;  // Skip "!echo "
 
     // Create reply message: "Echo: <text>"
@@ -199,8 +199,8 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
   Serial.printf("[BOT] Sender: %s, Message: %s\n", sender_name, message);
 
   // Handle !ping command (case-insensitive)
-  if ((message[0] == '!' && (strncasecmp(message, "!ping", 5) == 0 && (message[5] == '\0' || message[5] == ' '))) ||
-      (strcasecmp(message, "ping") == 0)) {
+  if ((strncasecmp(message, "!ping", 5) == 0 && (message[5] == '\0' || message[5] == ' ')) ||
+      (strncasecmp(message, "ping", 4) == 0 && (message[4] == '\0' || message[4] == ' '))) {
     char reply[MAX_TEXT_LEN + 1];
     snprintf(reply, sizeof(reply), "@[%s] pong 🤖", sender_name);
 
@@ -211,9 +211,11 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
     return true;
   }
 
-  // Handle !test or test command (case-insensitive)
-  if ((message[0] == '!' && (strncasecmp(message, "!test", 5) == 0 && (message[5] == '\0' || message[5] == ' '))) ||
-      (strcasecmp(message, "test") == 0)) {
+  // Handle !test/test/!prova/prova command (case-insensitive)
+  if ((strncasecmp(message, "!test", 5) == 0 && (message[5] == '\0' || message[5] == ' ')) ||
+      (strncasecmp(message, "test", 4) == 0 && (message[4] == '\0' || message[4] == ' ')) ||
+      (strncasecmp(message, "!prova", 6) == 0 && (message[6] == '\0' || message[6] == ' ')) ||
+      (strncasecmp(message, "prova", 5) == 0 && (message[5] == '\0' || message[5] == ' '))) {
     char reply[MAX_TEXT_LEN + 1];
 
     // Get hop count from packet
@@ -287,8 +289,8 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
 
   // Handle !path or path command (only in #bot channel, only respond to 1-byte hashes)
   if (strcmp(channel_name, "#bot") == 0 &&
-      ((message[0] == '!' && (strncasecmp(message, "!path", 5) == 0 && (message[5] == '\0' || message[5] == ' '))) ||
-       (strcasecmp(message, "path") == 0))) {
+      ((strncasecmp(message, "!path", 5) == 0 && (message[5] == '\0' || message[5] == ' ')) ||
+       (strncasecmp(message, "path", 4) == 0 && (message[4] == '\0' || message[4] == ' ')))) {
 
     uint8_t hop_count = pkt->getPathHashCount();
     uint8_t hash_size = pkt->getPathHashSize();
@@ -368,8 +370,8 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
     return true;  // Command was handled (even if we didn't reply)
   }
 
-  // Handle !echo command
-  if (message[0] == '!' && strncmp(message, "!echo ", 6) == 0) {
+  // Handle !echo command (case-insensitive)
+  if (strncasecmp(message, "!echo ", 6) == 0) {
     const char* echo_text = message + 6;  // Skip "!echo "
 
     // Create reply message: "@[Sender] Echo: <text> 🤖"

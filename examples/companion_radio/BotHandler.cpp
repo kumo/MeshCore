@@ -339,8 +339,28 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       if (mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply))) {
         Serial.printf("[BOT] Sent path warning to channel %s\n", channel_name);
       }
+    } else if (hash_size == 2 || hash_size == 3) {
+      // Debug logging for 2-byte and 3-byte hashes
+      Serial.printf("[BOT] Path command with %d-byte hashes, %d hops:\n", hash_size, hop_count);
+
+      for (uint8_t i = 0; i < hop_count; i++) {
+        const uint8_t* hash = &pkt->path[i * hash_size];
+
+        // Print hash in hex
+        Serial.printf("[BOT]   Hop %d: ", i);
+        for (uint8_t j = 0; j < hash_size; j++) {
+          Serial.printf("%02x", hash[j]);
+        }
+
+        // Try to look up contact
+        ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
+        if (contact) {
+          Serial.printf(" -> Found: %s\n", contact->name);
+        } else {
+          Serial.printf(" -> Not found\n");
+        }
+      }
     }
-    // If hash_size is 2 or 3, don't reply at all
     return true;  // Command was handled (even if we didn't reply)
   }
 

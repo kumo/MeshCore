@@ -285,6 +285,65 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
     return true;
   }
 
+  // Handle !path or path command (only in #bot channel, only respond to 1-byte hashes)
+  if (strcmp(channel_name, "#bot") == 0 &&
+      ((message[0] == '!' && (strncasecmp(message, "!path", 5) == 0 && (message[5] == '\0' || message[5] == ' '))) ||
+       (strcasecmp(message, "path") == 0))) {
+
+    uint8_t hop_count = pkt->getPathHashCount();
+    uint8_t hash_size = pkt->getPathHashSize();
+    const char* location = botGetLocation();
+
+    // Only respond if using 1-byte hashes (to warn about it)
+    if (hash_size == 1) {
+      char reply[MAX_TEXT_LEN + 1];
+
+      if (hop_count == 0) {
+        // Direct connection
+        if (location[0] != '\0') {
+          snprintf(reply, sizeof(reply), "@[%s] direct a %s | ⚠️ use 2-bytes 🤖", sender_name, location);
+        } else {
+          snprintf(reply, sizeof(reply), "@[%s] direct | ⚠️ use 2-bytes 🤖", sender_name);
+        }
+      } else {
+        // Build path string with hex hashes
+        char path_str[128] = {0};
+        char* out = path_str;
+        size_t remaining = sizeof(path_str);
+
+        for (uint8_t i = 0; i < hop_count && remaining > 10; i++) {
+          if (i > 0) {
+            int written = snprintf(out, remaining, "→");
+            out += written;
+            remaining -= written;
+          }
+
+          const uint8_t* hash = &pkt->path[i * hash_size];
+          for (uint8_t j = 0; j < hash_size && remaining > 3; j++) {
+            int written = snprintf(out, remaining, "%02x", hash[j]);
+            out += written;
+            remaining -= written;
+          }
+        }
+
+        if (location[0] != '\0') {
+          snprintf(reply, sizeof(reply), "@[%s] %d %s %s a %s | ⚠️ use 2-bytes 🤖",
+                   sender_name, hop_count, hop_count == 1 ? "hop" : "hops", path_str, location);
+        } else {
+          snprintf(reply, sizeof(reply), "@[%s] %d %s %s | ⚠️ use 2-bytes 🤖",
+                   sender_name, hop_count, hop_count == 1 ? "hop" : "hops", path_str);
+        }
+      }
+
+      uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
+      if (mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply))) {
+        Serial.printf("[BOT] Sent path warning to channel %s\n", channel_name);
+      }
+    }
+    // If hash_size is 2 or 3, don't reply at all
+    return true;  // Command was handled (even if we didn't reply)
+  }
+
   // Handle !echo command
   if (message[0] == '!' && strncmp(message, "!echo ", 6) == 0) {
     const char* echo_text = message + 6;  // Skip "!echo "

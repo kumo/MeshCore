@@ -20,6 +20,9 @@ void botInit();
 // Check if bot is currently enabled
 bool botIsEnabled();
 
+// Get bot location (returns empty string if not set)
+const char* botGetLocation();
+
 // Handle !bot configuration commands (on/off/status)
 // Returns true if command was handled, false if not a bot config command
 bool botHandleConfig(const char* text, char* reply, size_t reply_len);

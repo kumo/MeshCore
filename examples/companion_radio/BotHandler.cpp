@@ -16,6 +16,7 @@
 
 static constexpr const char* BOT_STATE_FILE = "/meshbot";
 static bool bot_enabled = false;
+static char bot_location[64] = {0};
 
 void botInit() {
 #ifdef ESP32
@@ -31,13 +32,21 @@ void botInit() {
     return;
   }
 
-  char buf[32] = {0};
+  char buf[256] = {0};
   size_t len = file.readBytes(buf, sizeof(buf) - 1);
   file.close();
 
-  // Parse "enabled=0" or "enabled=1"
-  if (strncmp(buf, "enabled=", 8) == 0) {
-    bot_enabled = (buf[8] == '1');
+  // Parse line by line: "enabled=0/1" and "location=..."
+  char* ctx = nullptr;
+  char* line = strtok_r(buf, "\n", &ctx);
+  while (line != nullptr) {
+    if (strncmp(line, "enabled=", 8) == 0) {
+      bot_enabled = (line[8] == '1');
+    } else if (strncmp(line, "location=", 9) == 0) {
+      strncpy(bot_location, line + 9, sizeof(bot_location) - 1);
+      bot_location[sizeof(bot_location) - 1] = '\0';
+    }
+    line = strtok_r(nullptr, "\n", &ctx);
   }
 }
 
@@ -53,12 +62,17 @@ static bool botSaveState() {
   if (!file) return false;
 
   file.printf("enabled=%d\n", bot_enabled ? 1 : 0);
+  file.printf("location=%s\n", bot_location);
   file.close();
   return true;
 }
 
 bool botIsEnabled() {
   return bot_enabled;
+}
+
+const char* botGetLocation() {
+  return bot_location;
 }
 
 bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
@@ -68,7 +82,12 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
 
   // Check for !bot commands
   if (strcmp(text, "!bot") == 0 || strcmp(text, "!bot status") == 0) {
-    snprintf(reply, reply_len, "bot: %s", bot_enabled ? "enabled" : "disabled");
+    if (bot_location[0] != '\0') {
+      snprintf(reply, reply_len, "bot: %s, location: %s",
+               bot_enabled ? "enabled" : "disabled", bot_location);
+    } else {
+      snprintf(reply, reply_len, "bot: %s", bot_enabled ? "enabled" : "disabled");
+    }
     return true;
   }
 
@@ -89,6 +108,18 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
       return true;
     }
     snprintf(reply, reply_len, "OK - bot disabled");
+    return true;
+  }
+
+  if (strncmp(text, "!bot location ", 14) == 0) {
+    const char* location = text + 14;
+    strncpy(bot_location, location, sizeof(bot_location) - 1);
+    bot_location[sizeof(bot_location) - 1] = '\0';
+    if (!botSaveState()) {
+      snprintf(reply, reply_len, "Error: could not save bot state");
+      return true;
+    }
+    snprintf(reply, reply_len, "OK - location set to: %s", bot_location);
     return true;
   }
 

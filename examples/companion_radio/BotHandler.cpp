@@ -166,7 +166,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
     snprintf(reply, sizeof(reply), "[BOT] Echo: %s", echo_text);
 
     uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
-    if (mesh.sendGroupMessage(timestamp, channel, "Bot", reply, strlen(reply))) {
+    if (mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply))) {
       Serial.printf("[BOT] Sent echo reply to channel %s\n", channel_name);
     }
     return true;

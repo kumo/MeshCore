@@ -269,7 +269,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       // Detailed format for #bot channel with path
       if (hop_count == 0) {
         if (location[0] != '\0') {
-          snprintf(reply, sizeof(reply), "@[%s] direct a %s 🤖", sender_name, location);
+          snprintf(reply, sizeof(reply), "@[%s] direct 📍 %s 🤖", sender_name, location);
         } else {
           snprintf(reply, sizeof(reply), "@[%s] direct 🤖", sender_name);
         }
@@ -295,7 +295,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
         }
 
         if (location[0] != '\0') {
-          snprintf(reply, sizeof(reply), "@[%s] %d %s %s a %s 🤖",
+          snprintf(reply, sizeof(reply), "@[%s] %d %s %s 📍 %s 🤖",
                    sender_name, hop_count, hop_count == 1 ? "hop" : "hops", path_str, location);
         } else {
           snprintf(reply, sizeof(reply), "@[%s] %d %s %s 🤖",
@@ -306,25 +306,25 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       // Simple format for other channels with optional repeater
       if (hop_count == 0) {
         if (location[0] != '\0') {
-          snprintf(reply, sizeof(reply), "@[%s] direct a %s 🤖", sender_name, location);
+          snprintf(reply, sizeof(reply), "@[%s] direct 📍 %s 🤖", sender_name, location);
         } else {
           snprintf(reply, sizeof(reply), "@[%s] direct 🤖", sender_name);
         }
       } else {
         const char* repeater = findBestRepeater(mesh, pkt);
         if (repeater) {
-          // Show repeater: "3 hops via IT-LIG-MteBeigua-D, Rasa (VA)"
+          // Show repeater: "3 hops via IT-LIG-MteBeigua-D 📍 Rasa (VA)"
           if (location[0] != '\0') {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s, %s 🤖",
+            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s 📍 %s 🤖",
                      sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater, location);
           } else {
             snprintf(reply, sizeof(reply), "@[%s] %d %s via %s 🤖",
                      sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater);
           }
         } else {
-          // No repeater known: "3 hops, Rasa (VA)"
+          // No repeater known: "3 hops 📍 Rasa (VA)"
           if (location[0] != '\0') {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s, %s 🤖",
+            snprintf(reply, sizeof(reply), "@[%s] %d %s 📍 %s 🤖",
                      sender_name, hop_count, hop_count == 1 ? "hop" : "hops", location);
           } else {
             snprintf(reply, sizeof(reply), "@[%s] %d %s 🤖",
@@ -357,7 +357,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       if (hop_count == 0) {
         // Direct connection
         if (location[0] != '\0') {
-          snprintf(reply, sizeof(reply), "@[%s] direct a %s | ⚠️ use 2-bytes 🤖", sender_name, location);
+          snprintf(reply, sizeof(reply), "@[%s] direct 📍 %s | ⚠️ use 2-bytes 🤖", sender_name, location);
         } else {
           snprintf(reply, sizeof(reply), "@[%s] direct | ⚠️ use 2-bytes 🤖", sender_name);
         }
@@ -383,7 +383,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
         }
 
         if (location[0] != '\0') {
-          snprintf(reply, sizeof(reply), "@[%s] %d %s %s a %s | ⚠️ use 2-bytes 🤖",
+          snprintf(reply, sizeof(reply), "@[%s] %d %s %s 📍 %s | ⚠️ use 2-bytes 🤖",
                    sender_name, hop_count, hop_count == 1 ? "hop" : "hops", path_str, location);
         } else {
           snprintf(reply, sizeof(reply), "@[%s] %d %s %s | ⚠️ use 2-bytes 🤖",
@@ -402,25 +402,25 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       if (hop_count == 0) {
         // Direct connection
         if (location[0] != '\0') {
-          snprintf(reply, sizeof(reply), "@[%s] direct a %s 🤖", sender_name, location);
+          snprintf(reply, sizeof(reply), "@[%s] direct 📍 %s 🤖", sender_name, location);
         } else {
           snprintf(reply, sizeof(reply), "@[%s] direct 🤖", sender_name);
         }
       } else {
         const char* repeater = findBestRepeater(mesh, pkt);
         if (repeater) {
-          // Show repeater: "3 hops via IT-LIG-MteBeigua-D, Rasa (VA)"
+          // Show repeater: "3 hops via IT-LIG-MteBeigua-D 📍 Rasa (VA)"
           if (location[0] != '\0') {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s, %s 🤖",
+            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s 📍 %s 🤖",
                      sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater, location);
           } else {
             snprintf(reply, sizeof(reply), "@[%s] %d %s via %s 🤖",
                      sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater);
           }
         } else {
-          // No repeater known: "3 hops, Rasa (VA)"
+          // No repeater known: "3 hops 📍 Rasa (VA)"
           if (location[0] != '\0') {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s, %s 🤖",
+            snprintf(reply, sizeof(reply), "@[%s] %d %s 📍 %s 🤖",
                      sender_name, hop_count, hop_count == 1 ? "hop" : "hops", location);
           } else {
             snprintf(reply, sizeof(reply), "@[%s] %d %s 🤖",

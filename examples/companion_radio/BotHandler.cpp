@@ -173,7 +173,10 @@ static const char* findBestRepeater(MyMesh& mesh, mesh::Packet* pkt) {
   const char* first_hop = nullptr;
   const char* any_known = nullptr;
 
-  for (uint8_t i = 0; i < hop_count; i++) {
+  // If multiple hops, exclude last one (destination). If only 1 hop, check it (it's the repeater)
+  uint8_t hops_to_check = (hop_count > 1) ? hop_count - 1 : hop_count;
+
+  for (uint8_t i = 0; i < hops_to_check; i++) {
     const uint8_t* hash = &pkt->path[i * hash_size];
     ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
 
@@ -194,9 +197,27 @@ static const char* findBestRepeater(MyMesh& mesh, mesh::Packet* pkt) {
   }
 
   // Priority: backbone > first hop > any known
-  if (backbone_repeater) return backbone_repeater;
-  if (first_hop) return first_hop;
-  return any_known;
+  const char* selected = nullptr;
+  const char* reason = nullptr;
+
+  if (backbone_repeater) {
+    selected = backbone_repeater;
+    reason = "backbone (-D)";
+  } else if (first_hop) {
+    selected = first_hop;
+    reason = "first hop";
+  } else if (any_known) {
+    selected = any_known;
+    reason = "any known";
+  }
+
+  if (selected) {
+    Serial.printf("[BOT] Selected repeater: %s (%s)\n", selected, reason);
+  } else {
+    Serial.printf("[BOT] No repeater found in path\n");
+  }
+
+  return selected;
 }
 
 bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel& channel,

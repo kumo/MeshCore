@@ -176,16 +176,33 @@ static const char* findBestRepeater(MyMesh& mesh, mesh::Packet* pkt) {
   // If multiple hops, exclude last one (destination). If only 1 hop, check it (it's the repeater)
   uint8_t hops_to_check = (hop_count > 1) ? hop_count - 1 : hop_count;
 
+  Serial.printf("[BOT] findBestRepeater: checking %d hops (total %d):\n", hops_to_check, hop_count);
+
+  uint8_t found_count = 0;
   for (uint8_t i = 0; i < hops_to_check; i++) {
     const uint8_t* hash = &pkt->path[i * hash_size];
+
+    // Print hash
+    Serial.printf("[BOT]   Hop %d: ", i);
+    for (uint8_t j = 0; j < hash_size; j++) {
+      Serial.printf("%02x", hash[j]);
+    }
+
     ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
 
     if (contact) {
+      found_count++;
+
       // Check if backbone router (ends with -D or -d)
       size_t len = strlen(contact->name);
-      if (len >= 2 && contact->name[len-2] == '-' &&
-          (contact->name[len-1] == 'D' || contact->name[len-1] == 'd')) {
+      bool is_backbone = (len >= 2 && contact->name[len-2] == '-' &&
+                         (contact->name[len-1] == 'D' || contact->name[len-1] == 'd'));
+
+      if (is_backbone) {
+        Serial.printf(" -> Found: %s (BACKBONE)\n", contact->name);
         if (!backbone_repeater) backbone_repeater = contact->name;
+      } else {
+        Serial.printf(" -> Found: %s\n", contact->name);
       }
 
       // Track first hop
@@ -193,8 +210,12 @@ static const char* findBestRepeater(MyMesh& mesh, mesh::Packet* pkt) {
 
       // Track any known
       if (!any_known) any_known = contact->name;
+    } else {
+      Serial.printf(" -> Not found\n");
     }
   }
+
+  Serial.printf("[BOT] Path resolution: %d/%d hops found\n", found_count, hops_to_check);
 
   // Priority: backbone > first hop > any known
   const char* selected = nullptr;

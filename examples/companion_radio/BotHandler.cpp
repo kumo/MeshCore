@@ -167,14 +167,13 @@ static const char* findBestRepeater(MyMesh& mesh, mesh::Packet* pkt) {
   uint8_t hop_count = pkt->getPathHashCount();
   uint8_t hash_size = pkt->getPathHashSize();
 
-  if (hop_count <= 1) return nullptr;  // Need at least 2 hops to have intermediate nodes
+  if (hop_count == 0) return nullptr;  // Direct connection, no intermediate nodes
 
-  // Exclude last hop (destination), check up to hop_count - 1
   const char* backbone_repeater = nullptr;
   const char* first_hop = nullptr;
   const char* any_known = nullptr;
 
-  for (uint8_t i = 0; i < hop_count - 1; i++) {
+  for (uint8_t i = 0; i < hop_count; i++) {
     const uint8_t* hash = &pkt->path[i * hash_size];
     ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
 

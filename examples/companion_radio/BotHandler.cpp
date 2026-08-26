@@ -159,6 +159,47 @@ bool botHandleDM(MyMesh& mesh, const ContactInfo& from, mesh::Packet* pkt, const
   return false;  // Not a bot command
 }
 
+// Find best repeater to show in "via X" format
+// Priority: backbone router (-D) > first hop > any known hop
+// Excludes last hop (destination)
+// Returns nullptr if no suitable repeater found
+static const char* findBestRepeater(MyMesh& mesh, mesh::Packet* pkt) {
+  uint8_t hop_count = pkt->getPathHashCount();
+  uint8_t hash_size = pkt->getPathHashSize();
+
+  if (hop_count <= 1) return nullptr;  // Need at least 2 hops to have intermediate nodes
+
+  // Exclude last hop (destination), check up to hop_count - 1
+  const char* backbone_repeater = nullptr;
+  const char* first_hop = nullptr;
+  const char* any_known = nullptr;
+
+  for (uint8_t i = 0; i < hop_count - 1; i++) {
+    const uint8_t* hash = &pkt->path[i * hash_size];
+    ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
+
+    if (contact) {
+      // Check if backbone router (ends with -D or -d)
+      size_t len = strlen(contact->name);
+      if (len >= 2 && contact->name[len-2] == '-' &&
+          (contact->name[len-1] == 'D' || contact->name[len-1] == 'd')) {
+        if (!backbone_repeater) backbone_repeater = contact->name;
+      }
+
+      // Track first hop
+      if (i == 0 && !first_hop) first_hop = contact->name;
+
+      // Track any known
+      if (!any_known) any_known = contact->name;
+    }
+  }
+
+  // Priority: backbone > first hop > any known
+  if (backbone_repeater) return backbone_repeater;
+  if (first_hop) return first_hop;
+  return any_known;
+}
+
 bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel& channel,
                       mesh::Packet* pkt, const char* text) {
   if (channel_name == nullptr || text == nullptr || pkt == nullptr) {
@@ -262,7 +303,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
         }
       }
     } else {
-      // Simple format for other channels
+      // Simple format for other channels with optional repeater
       if (hop_count == 0) {
         if (location[0] != '\0') {
           snprintf(reply, sizeof(reply), "@[%s] direct a %s 🤖", sender_name, location);
@@ -270,12 +311,25 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
           snprintf(reply, sizeof(reply), "@[%s] direct 🤖", sender_name);
         }
       } else {
-        if (location[0] != '\0') {
-          snprintf(reply, sizeof(reply), "@[%s] %d %s a %s 🤖",
-                   sender_name, hop_count, hop_count == 1 ? "hop" : "hops", location);
+        const char* repeater = findBestRepeater(mesh, pkt);
+        if (repeater) {
+          // Show repeater: "3 hops via IT-LIG-MteBeigua-D, Rasa (VA)"
+          if (location[0] != '\0') {
+            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s, %s 🤖",
+                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater, location);
+          } else {
+            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s 🤖",
+                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater);
+          }
         } else {
-          snprintf(reply, sizeof(reply), "@[%s] %d %s 🤖",
-                   sender_name, hop_count, hop_count == 1 ? "hop" : "hops");
+          // No repeater known: "3 hops, Rasa (VA)"
+          if (location[0] != '\0') {
+            snprintf(reply, sizeof(reply), "@[%s] %d %s, %s 🤖",
+                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", location);
+          } else {
+            snprintf(reply, sizeof(reply), "@[%s] %d %s 🤖",
+                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops");
+          }
         }
       }
     }
@@ -342,20 +396,55 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
         Serial.printf("[BOT] Sent path warning to channel %s\n", channel_name);
       }
     } else if (hash_size == 2 || hash_size == 3) {
-      // Debug logging for 2-byte and 3-byte hashes
-      Serial.printf("[BOT] Path command with %d-byte hashes, %d hops:\n", hash_size, hop_count);
+      // Reply with "via repeater" format for 2-byte and 3-byte hashes
+      char reply[MAX_TEXT_LEN + 1];
 
+      if (hop_count == 0) {
+        // Direct connection
+        if (location[0] != '\0') {
+          snprintf(reply, sizeof(reply), "@[%s] direct a %s 🤖", sender_name, location);
+        } else {
+          snprintf(reply, sizeof(reply), "@[%s] direct 🤖", sender_name);
+        }
+      } else {
+        const char* repeater = findBestRepeater(mesh, pkt);
+        if (repeater) {
+          // Show repeater: "3 hops via IT-LIG-MteBeigua-D, Rasa (VA)"
+          if (location[0] != '\0') {
+            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s, %s 🤖",
+                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater, location);
+          } else {
+            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s 🤖",
+                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater);
+          }
+        } else {
+          // No repeater known: "3 hops, Rasa (VA)"
+          if (location[0] != '\0') {
+            snprintf(reply, sizeof(reply), "@[%s] %d %s, %s 🤖",
+                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", location);
+          } else {
+            snprintf(reply, sizeof(reply), "@[%s] %d %s 🤖",
+                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops");
+          }
+        }
+      }
+
+      uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
+      if (mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply))) {
+        Serial.printf("[BOT] Sent path reply to channel %s\n", channel_name);
+      }
+
+      // Debug logging
+      Serial.printf("[BOT] Path command with %d-byte hashes, %d hops:\n", hash_size, hop_count);
       uint8_t found_count = 0;
       for (uint8_t i = 0; i < hop_count; i++) {
         const uint8_t* hash = &pkt->path[i * hash_size];
 
-        // Print hash in hex
         Serial.printf("[BOT]   Hop %d: ", i);
         for (uint8_t j = 0; j < hash_size; j++) {
           Serial.printf("%02x", hash[j]);
         }
 
-        // Try to look up contact
         ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
         if (contact) {
           Serial.printf(" -> Found: %s\n", contact->name);
@@ -364,7 +453,6 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
           Serial.printf(" -> Not found\n");
         }
       }
-
       Serial.printf("[BOT] Path resolution: %d/%d hops found\n", found_count, hop_count);
     }
     return true;  // Command was handled (even if we didn't reply)

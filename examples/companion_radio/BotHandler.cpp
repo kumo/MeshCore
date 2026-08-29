@@ -75,9 +75,9 @@ const char* botGetLocation() {
   return bot_location;
 }
 
-static const char* getBotWarnings(uint8_t hash_size, bool has_location) {
+static const char* getBotWarnings(uint8_t hash_size, bool has_region) {
   bool needs_bytes_warning = (hash_size == 1);
-  bool needs_region_warning = !has_location;
+  bool needs_region_warning = !has_region;
 
   if (needs_bytes_warning && needs_region_warning) {
     return " | ⚠️ use 2-bytes & set region it";
@@ -378,7 +378,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
 
     uint8_t hash_size = pkt->getPathHashSize();
     const char* location = botGetLocation();
-    const char* warnings = getBotWarnings(hash_size, location[0] != '\0');
+    const char* warnings = getBotWarnings(hash_size, pkt->hasTransportCodes());
 
     char body[128];
     if (strcmp(channel_name, "#bot") == 0) {
@@ -399,7 +399,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
     uint8_t hop_count = pkt->getPathHashCount();
     uint8_t hash_size = pkt->getPathHashSize();
     const char* location = botGetLocation();
-    const char* warnings = getBotWarnings(hash_size, location[0] != '\0');
+    const char* warnings = getBotWarnings(hash_size, pkt->hasTransportCodes());
 
     char body[128];
     if (hash_size == 1) {

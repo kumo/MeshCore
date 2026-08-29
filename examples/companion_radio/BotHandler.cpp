@@ -304,6 +304,120 @@ static void buildHopSummary(char* body, size_t body_len, MyMesh& mesh, mesh::Pac
   }
 }
 
+static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mesh::Packet* pkt) {
+  uint8_t hop_count = pkt->getPathHashCount();
+  uint8_t hash_size = pkt->getPathHashSize();
+
+  if (hop_count == 0) {
+    snprintf(body, body_len, "direct");
+    return;
+  }
+
+  // Resolve key hops: first, middle (prefer backbone), last (excluding destination)
+  uint8_t hops_to_check = (hop_count > 1) ? hop_count - 1 : hop_count;
+
+  const char* first_hop = nullptr;
+  const char* middle_hop = nullptr;
+  const char* last_hop = nullptr;
+
+  // Resolve first hop
+  if (hops_to_check > 0) {
+    const uint8_t* hash = &pkt->path[0 * hash_size];
+    ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
+    if (contact) {
+      first_hop = contact->name;
+    }
+  }
+
+  // Resolve last hop (before destination)
+  if (hops_to_check > 1) {
+    const uint8_t* hash = &pkt->path[(hops_to_check - 1) * hash_size];
+    ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
+    if (contact) {
+      last_hop = contact->name;
+    }
+  }
+
+  // Find middle hop - prioritize backbone routers
+  if (hops_to_check > 2) {
+    for (uint8_t i = 1; i < hops_to_check - 1; i++) {
+      const uint8_t* hash = &pkt->path[i * hash_size];
+      ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
+      if (contact) {
+        size_t len = strlen(contact->name);
+        bool is_backbone = (len >= 2 && contact->name[len-2] == '-' &&
+                           (contact->name[len-1] == 'D' || contact->name[len-1] == 'd'));
+        if (is_backbone) {
+          middle_hop = contact->name;
+          break;  // Found backbone, stop searching
+        } else if (!middle_hop) {
+          middle_hop = contact->name;  // Keep first resolvable as fallback
+        }
+      }
+    }
+  }
+
+  // Build path string
+  char path_str[128] = {0};
+  if (hop_count == 1) {
+    // Single hop
+    if (first_hop) {
+      snprintf(path_str, sizeof(path_str), "%s", first_hop);
+    } else {
+      snprintf(path_str, sizeof(path_str), "...");
+    }
+  } else {
+    // Multiple hops - build with ellipsis
+    char* out = path_str;
+    size_t remaining = sizeof(path_str);
+    bool needs_separator = false;
+
+    if (first_hop) {
+      int written = snprintf(out, remaining, "%s", first_hop);
+      out += written;
+      remaining -= written;
+      needs_separator = true;
+    } else {
+      int written = snprintf(out, remaining, "...");
+      out += written;
+      remaining -= written;
+      needs_separator = true;
+    }
+
+    if (middle_hop && middle_hop != first_hop && middle_hop != last_hop) {
+      if (needs_separator) {
+        int written = snprintf(out, remaining, "→...→");
+        out += written;
+        remaining -= written;
+      }
+      int written = snprintf(out, remaining, "%s", middle_hop);
+      out += written;
+      remaining -= written;
+      needs_separator = true;
+    }
+
+    if (last_hop && last_hop != first_hop) {
+      if (needs_separator) {
+        int written = snprintf(out, remaining, "→...→");
+        out += written;
+        remaining -= written;
+      }
+      int written = snprintf(out, remaining, "%s", last_hop);
+      out += written;
+      remaining -= written;
+    } else if (!middle_hop && !last_hop) {
+      // No middle or last resolved, just show gap
+      if (needs_separator) {
+        int written = snprintf(out, remaining, "→...");
+        out += written;
+        remaining -= written;
+      }
+    }
+  }
+
+  snprintf(body, body_len, "%d %s %s", hop_count, hop_count == 1 ? "hop" : "hops", path_str);
+}
+
 static bool sendBotReply(MyMesh& mesh, const char* channel_name, mesh::GroupChannel& channel,
                          const char* sender_name, const char* body,
                          const char* location, const char* warnings) {
@@ -403,9 +517,11 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
 
     char body[128];
     if (hash_size == 1) {
+      // 1-byte hashes: show hex path (unreliable resolution)
       buildHopPath(body, sizeof(body), pkt);
     } else {
-      buildHopSummary(body, sizeof(body), mesh, pkt);
+      // 2/3-byte hashes: show resolved names with ellipsis
+      buildHopPathWithNames(body, sizeof(body), mesh, pkt);
     }
 
     sendBotReply(mesh, channel_name, channel, sender_name, body, location, warnings);

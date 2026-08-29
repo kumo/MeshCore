@@ -51,9 +51,14 @@ Shows hop count and location. "prova" is Italian alternative to "test".
 - With repeater: `@[Bob] 3 hops via IT-LIG-MteBeigua-D 📍 Rasa (VA) 🤖`
 - Without repeater: `@[Bob] 3 hops 📍 Rasa (VA) 🤖`
 
+**Warnings:**
+- If location not set: Adds `| ⚠️ set region it`
+- If using 1-byte hashes: Adds `| ⚠️ use 2-bytes`
+- Both warnings appear if both conditions are true
+
 ### path / !path
 
-**Only available in #bot channel.** Shows path information and warns about hash size issues.
+**Only available in #bot channel.** Shows path information and warns about configuration issues.
 
 **With 1-byte hashes:**
 - Warns to use 2-byte hashes (collision risk)
@@ -62,6 +67,11 @@ Shows hop count and location. "prova" is Italian alternative to "test".
 **With 2-byte or 3-byte hashes:**
 - Same format as test/prova with repeater
 - `@[Bob] 3 hops via IT-LIG-MteBeigua-D 📍 Rasa (VA) 🤖`
+
+**Warnings:**
+- If location not set: Adds `| ⚠️ set region it`
+- If using 1-byte hashes: Adds `| ⚠️ use 2-bytes`
+- Both warnings appear if both conditions are true
 
 ### !echo <text>
 
@@ -111,4 +121,11 @@ Bot: @[Bob] 1 hop via IT-LOM-VA-Rasa-R 📍 Rasa (VA) 🤖
 
 User (in #bot): path
 Bot: @[Charlie] 2 hops a1b2→c3d4 📍 Rasa (VA) 🤖
+
+# With warnings:
+User: test
+Bot (no location set): @[Dave] 2 hops via IT-LIG-MteBeigua-D | ⚠️ set region it 🤖
+
+User (in #bot): path
+Bot (1-byte hash, no location): @[Eve] 3 hops a1→b2→c3 | ⚠️ use 2-bytes & set region it 🤖
 ```

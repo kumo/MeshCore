@@ -311,7 +311,7 @@ static bool sendBotReply(MyMesh& mesh, const char* channel_name, mesh::GroupChan
 
   // Assemble: @[sender] {body} {location} {warnings} 🤖
   if (location && location[0] != '\0') {
-    snprintf(reply, sizeof(reply), "@[%s] %s 📍 %s%s 🤖", sender_name, body, location, warnings);
+    snprintf(reply, sizeof(reply), "@[%s] %s\n📍 %s%s 🤖", sender_name, body, location, warnings);
   } else {
     snprintf(reply, sizeof(reply), "@[%s] %s%s 🤖", sender_name, body, warnings);
   }

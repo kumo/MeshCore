@@ -75,6 +75,21 @@ const char* botGetLocation() {
   return bot_location;
 }
 
+static const char* getBotWarnings(uint8_t hash_size, bool has_location) {
+  bool needs_bytes_warning = (hash_size == 1);
+  bool needs_region_warning = !has_location;
+
+  if (needs_bytes_warning && needs_region_warning) {
+    return " | ⚠️ use 2-bytes & set region it";
+  } else if (needs_bytes_warning) {
+    return " | ⚠️ use 2-bytes";
+  } else if (needs_region_warning) {
+    return " | ⚠️ set region it";
+  } else {
+    return "";
+  }
+}
+
 bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
   if (text == nullptr || reply == nullptr || reply_len == 0) {
     return false;
@@ -345,31 +360,33 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       }
     } else {
       // Simple format for other channels with optional repeater
+      const char* warnings = getBotWarnings(hash_size, location[0] != '\0');
+
       if (hop_count == 0) {
         if (location[0] != '\0') {
-          snprintf(reply, sizeof(reply), "@[%s] direct 📍 %s 🤖", sender_name, location);
+          snprintf(reply, sizeof(reply), "@[%s] direct 📍 %s%s 🤖", sender_name, location, warnings);
         } else {
-          snprintf(reply, sizeof(reply), "@[%s] direct | ⚠️ set region it 🤖", sender_name);
+          snprintf(reply, sizeof(reply), "@[%s] direct%s 🤖", sender_name, warnings);
         }
       } else {
         const char* repeater = findBestRepeater(mesh, pkt);
         if (repeater) {
           // Show repeater: "3 hops via IT-LIG-MteBeigua-D 📍 Rasa (VA)"
           if (location[0] != '\0') {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s 📍 %s 🤖",
-                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater, location);
+            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s 📍 %s%s 🤖",
+                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater, location, warnings);
           } else {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s | ⚠️ set region it 🤖",
-                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater);
+            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s%s 🤖",
+                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater, warnings);
           }
         } else {
           // No repeater known: "3 hops 📍 Rasa (VA)"
           if (location[0] != '\0') {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s 📍 %s 🤖",
-                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", location);
+            snprintf(reply, sizeof(reply), "@[%s] %d %s 📍 %s%s 🤖",
+                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", location, warnings);
           } else {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s | ⚠️ set region it 🤖",
-                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops");
+            snprintf(reply, sizeof(reply), "@[%s] %d %s%s 🤖",
+                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", warnings);
           }
         }
       }
@@ -394,13 +411,14 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
     // Only respond if using 1-byte hashes (to warn about it)
     if (hash_size == 1) {
       char reply[MAX_TEXT_LEN + 1];
+      const char* warnings = getBotWarnings(hash_size, location[0] != '\0');
 
       if (hop_count == 0) {
         // Direct connection
         if (location[0] != '\0') {
-          snprintf(reply, sizeof(reply), "@[%s] direct 📍 %s | ⚠️ use 2-bytes 🤖", sender_name, location);
+          snprintf(reply, sizeof(reply), "@[%s] direct 📍 %s%s 🤖", sender_name, location, warnings);
         } else {
-          snprintf(reply, sizeof(reply), "@[%s] direct | ⚠️ use 2-bytes ⚠️ set region it 🤖", sender_name);
+          snprintf(reply, sizeof(reply), "@[%s] direct%s 🤖", sender_name, warnings);
         }
       } else {
         // Build path string with hex hashes
@@ -424,11 +442,11 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
         }
 
         if (location[0] != '\0') {
-          snprintf(reply, sizeof(reply), "@[%s] %d %s %s 📍 %s | ⚠️ use 2-bytes 🤖",
-                   sender_name, hop_count, hop_count == 1 ? "hop" : "hops", path_str, location);
+          snprintf(reply, sizeof(reply), "@[%s] %d %s %s 📍 %s%s 🤖",
+                   sender_name, hop_count, hop_count == 1 ? "hop" : "hops", path_str, location, warnings);
         } else {
-          snprintf(reply, sizeof(reply), "@[%s] %d %s %s | ⚠️ use 2-bytes ⚠️ set region it 🤖",
-                   sender_name, hop_count, hop_count == 1 ? "hop" : "hops", path_str);
+          snprintf(reply, sizeof(reply), "@[%s] %d %s %s%s 🤖",
+                   sender_name, hop_count, hop_count == 1 ? "hop" : "hops", path_str, warnings);
         }
       }
 
@@ -439,33 +457,34 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
     } else if (hash_size == 2 || hash_size == 3) {
       // Reply with "via repeater" format for 2-byte and 3-byte hashes
       char reply[MAX_TEXT_LEN + 1];
+      const char* warnings = getBotWarnings(hash_size, location[0] != '\0');
 
       if (hop_count == 0) {
         // Direct connection
         if (location[0] != '\0') {
-          snprintf(reply, sizeof(reply), "@[%s] direct 📍 %s 🤖", sender_name, location);
+          snprintf(reply, sizeof(reply), "@[%s] direct 📍 %s%s 🤖", sender_name, location, warnings);
         } else {
-          snprintf(reply, sizeof(reply), "@[%s] direct | ⚠️ set region it 🤖", sender_name);
+          snprintf(reply, sizeof(reply), "@[%s] direct%s 🤖", sender_name, warnings);
         }
       } else {
         const char* repeater = findBestRepeater(mesh, pkt);
         if (repeater) {
           // Show repeater: "3 hops via IT-LIG-MteBeigua-D 📍 Rasa (VA)"
           if (location[0] != '\0') {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s 📍 %s 🤖",
-                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater, location);
+            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s 📍 %s%s 🤖",
+                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater, location, warnings);
           } else {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s | ⚠️ set region it 🤖",
-                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater);
+            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s%s 🤖",
+                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater, warnings);
           }
         } else {
           // No repeater known: "3 hops 📍 Rasa (VA)"
           if (location[0] != '\0') {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s 📍 %s 🤖",
-                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", location);
+            snprintf(reply, sizeof(reply), "@[%s] %d %s 📍 %s%s 🤖",
+                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", location, warnings);
           } else {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s | ⚠️ set region it 🤖",
-                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops");
+            snprintf(reply, sizeof(reply), "@[%s] %d %s%s 🤖",
+                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", warnings);
           }
         }
       }

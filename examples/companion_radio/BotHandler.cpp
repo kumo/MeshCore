@@ -349,7 +349,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
         if (location[0] != '\0') {
           snprintf(reply, sizeof(reply), "@[%s] direct 📍 %s 🤖", sender_name, location);
         } else {
-          snprintf(reply, sizeof(reply), "@[%s] direct 🤖", sender_name);
+          snprintf(reply, sizeof(reply), "@[%s] direct | ⚠️ set region it 🤖", sender_name);
         }
       } else {
         const char* repeater = findBestRepeater(mesh, pkt);
@@ -359,7 +359,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
             snprintf(reply, sizeof(reply), "@[%s] %d %s via %s 📍 %s 🤖",
                      sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater, location);
           } else {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s 🤖",
+            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s | ⚠️ set region it 🤖",
                      sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater);
           }
         } else {
@@ -368,7 +368,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
             snprintf(reply, sizeof(reply), "@[%s] %d %s 📍 %s 🤖",
                      sender_name, hop_count, hop_count == 1 ? "hop" : "hops", location);
           } else {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s 🤖",
+            snprintf(reply, sizeof(reply), "@[%s] %d %s | ⚠️ set region it 🤖",
                      sender_name, hop_count, hop_count == 1 ? "hop" : "hops");
           }
         }
@@ -400,7 +400,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
         if (location[0] != '\0') {
           snprintf(reply, sizeof(reply), "@[%s] direct 📍 %s | ⚠️ use 2-bytes 🤖", sender_name, location);
         } else {
-          snprintf(reply, sizeof(reply), "@[%s] direct | ⚠️ use 2-bytes 🤖", sender_name);
+          snprintf(reply, sizeof(reply), "@[%s] direct | ⚠️ use 2-bytes ⚠️ set region it 🤖", sender_name);
         }
       } else {
         // Build path string with hex hashes
@@ -427,7 +427,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
           snprintf(reply, sizeof(reply), "@[%s] %d %s %s 📍 %s | ⚠️ use 2-bytes 🤖",
                    sender_name, hop_count, hop_count == 1 ? "hop" : "hops", path_str, location);
         } else {
-          snprintf(reply, sizeof(reply), "@[%s] %d %s %s | ⚠️ use 2-bytes 🤖",
+          snprintf(reply, sizeof(reply), "@[%s] %d %s %s | ⚠️ use 2-bytes ⚠️ set region it 🤖",
                    sender_name, hop_count, hop_count == 1 ? "hop" : "hops", path_str);
         }
       }
@@ -445,7 +445,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
         if (location[0] != '\0') {
           snprintf(reply, sizeof(reply), "@[%s] direct 📍 %s 🤖", sender_name, location);
         } else {
-          snprintf(reply, sizeof(reply), "@[%s] direct 🤖", sender_name);
+          snprintf(reply, sizeof(reply), "@[%s] direct | ⚠️ set region it 🤖", sender_name);
         }
       } else {
         const char* repeater = findBestRepeater(mesh, pkt);
@@ -455,7 +455,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
             snprintf(reply, sizeof(reply), "@[%s] %d %s via %s 📍 %s 🤖",
                      sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater, location);
           } else {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s 🤖",
+            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s | ⚠️ set region it 🤖",
                      sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater);
           }
         } else {
@@ -464,7 +464,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
             snprintf(reply, sizeof(reply), "@[%s] %d %s 📍 %s 🤖",
                      sender_name, hop_count, hop_count == 1 ? "hop" : "hops", location);
           } else {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s 🤖",
+            snprintf(reply, sizeof(reply), "@[%s] %d %s | ⚠️ set region it 🤖",
                      sender_name, hop_count, hop_count == 1 ? "hop" : "hops");
           }
         }

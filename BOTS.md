@@ -58,7 +58,7 @@ Shows hop count and location. "prova" is Italian alternative to "test".
 
 ### path / !path
 
-**Only available in #bot channel.** Shows path information and warns about configuration issues.
+Shows path information and warns about configuration issues.
 
 **With 1-byte hashes:**
 - Shows full hex path (resolution unreliable with 1-byte)

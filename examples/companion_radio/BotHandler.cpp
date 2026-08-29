@@ -505,10 +505,9 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
     return true;
   }
 
-  // Handle !path or path command (only in #bot channel)
-  if (strcmp(channel_name, "#bot") == 0 &&
-      ((strncasecmp(message, "!path", 5) == 0 && (message[5] == '\0' || message[5] == ' ')) ||
-       (strncasecmp(message, "path", 4) == 0 && (message[4] == '\0' || message[4] == ' ')))) {
+  // Handle !path or path command
+  if ((strncasecmp(message, "!path", 5) == 0 && (message[5] == '\0' || message[5] == ' ')) ||
+      (strncasecmp(message, "path", 4) == 0 && (message[4] == '\0' || message[4] == ' '))) {
 
     uint8_t hop_count = pkt->getPathHashCount();
     uint8_t hash_size = pkt->getPathHashSize();

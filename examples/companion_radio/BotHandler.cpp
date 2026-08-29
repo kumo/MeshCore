@@ -256,6 +256,74 @@ static const char* findBestRepeater(MyMesh& mesh, mesh::Packet* pkt) {
   return selected;
 }
 
+static void buildHopPath(char* body, size_t body_len, mesh::Packet* pkt) {
+  uint8_t hop_count = pkt->getPathHashCount();
+  uint8_t hash_size = pkt->getPathHashSize();
+
+  if (hop_count == 0) {
+    snprintf(body, body_len, "direct");
+    return;
+  }
+
+  // Build "N hops a1b2→c3d4→..." format
+  char path_str[128] = {0};
+  char* out = path_str;
+  size_t remaining = sizeof(path_str);
+
+  for (uint8_t i = 0; i < hop_count && remaining > 10; i++) {
+    if (i > 0) {
+      int written = snprintf(out, remaining, "→");
+      out += written;
+      remaining -= written;
+    }
+
+    const uint8_t* hash = &pkt->path[i * hash_size];
+    for (uint8_t j = 0; j < hash_size && remaining > 3; j++) {
+      int written = snprintf(out, remaining, "%02x", hash[j]);
+      out += written;
+      remaining -= written;
+    }
+  }
+
+  snprintf(body, body_len, "%d %s %s", hop_count, hop_count == 1 ? "hop" : "hops", path_str);
+}
+
+static void buildHopSummary(char* body, size_t body_len, MyMesh& mesh, mesh::Packet* pkt) {
+  uint8_t hop_count = pkt->getPathHashCount();
+
+  if (hop_count == 0) {
+    snprintf(body, body_len, "direct");
+    return;
+  }
+
+  const char* repeater = findBestRepeater(mesh, pkt);
+  if (repeater) {
+    snprintf(body, body_len, "%d %s via %s", hop_count, hop_count == 1 ? "hop" : "hops", repeater);
+  } else {
+    snprintf(body, body_len, "%d %s", hop_count, hop_count == 1 ? "hop" : "hops");
+  }
+}
+
+static bool sendBotReply(MyMesh& mesh, const char* channel_name, mesh::GroupChannel& channel,
+                         const char* sender_name, const char* body,
+                         const char* location, const char* warnings) {
+  char reply[MAX_TEXT_LEN + 1];
+
+  // Assemble: @[sender] {body} {location} {warnings} 🤖
+  if (location && location[0] != '\0') {
+    snprintf(reply, sizeof(reply), "@[%s] %s 📍 %s%s 🤖", sender_name, body, location, warnings);
+  } else {
+    snprintf(reply, sizeof(reply), "@[%s] %s%s 🤖", sender_name, body, warnings);
+  }
+
+  uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
+  if (mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply))) {
+    Serial.printf("[BOT] Sent reply to channel %s\n", channel_name);
+    return true;
+  }
+  return false;
+}
+
 bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel& channel,
                       mesh::Packet* pkt, const char* text) {
   if (channel_name == nullptr || text == nullptr || pkt == nullptr) {
@@ -298,13 +366,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
   // Handle !ping command (case-insensitive)
   if ((strncasecmp(message, "!ping", 5) == 0 && (message[5] == '\0' || message[5] == ' ')) ||
       (strncasecmp(message, "ping", 4) == 0 && (message[4] == '\0' || message[4] == ' '))) {
-    char reply[MAX_TEXT_LEN + 1];
-    snprintf(reply, sizeof(reply), "@[%s] pong 🤖", sender_name);
-
-    uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
-    if (mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply))) {
-      Serial.printf("[BOT] Sent ping reply to channel %s\n", channel_name);
-    }
+    sendBotReply(mesh, channel_name, channel, sender_name, "pong", nullptr, "");
     return true;
   }
 
@@ -313,93 +375,23 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       (strncasecmp(message, "test", 4) == 0 && (message[4] == '\0' || message[4] == ' ')) ||
       (strncasecmp(message, "!prova", 6) == 0 && (message[6] == '\0' || message[6] == ' ')) ||
       (strncasecmp(message, "prova", 5) == 0 && (message[5] == '\0' || message[5] == ' '))) {
-    char reply[MAX_TEXT_LEN + 1];
 
-    // Get hop count from packet
-    uint8_t hop_count = pkt->getPathHashCount();
     uint8_t hash_size = pkt->getPathHashSize();
     const char* location = botGetLocation();
+    const char* warnings = getBotWarnings(hash_size, location[0] != '\0');
 
-    // Format based on channel
+    char body[128];
     if (strcmp(channel_name, "#bot") == 0) {
-      // Detailed format for #bot channel with path
-      if (hop_count == 0) {
-        if (location[0] != '\0') {
-          snprintf(reply, sizeof(reply), "@[%s] direct 📍 %s 🤖", sender_name, location);
-        } else {
-          snprintf(reply, sizeof(reply), "@[%s] direct 🤖", sender_name);
-        }
-      } else {
-        // Build path string with hex hashes
-        char path_str[128] = {0};
-        char* out = path_str;
-        size_t remaining = sizeof(path_str);
-
-        for (uint8_t i = 0; i < hop_count && remaining > 10; i++) {
-          if (i > 0) {
-            int written = snprintf(out, remaining, "→");
-            out += written;
-            remaining -= written;
-          }
-
-          const uint8_t* hash = &pkt->path[i * hash_size];
-          for (uint8_t j = 0; j < hash_size && remaining > 3; j++) {
-            int written = snprintf(out, remaining, "%02x", hash[j]);
-            out += written;
-            remaining -= written;
-          }
-        }
-
-        if (location[0] != '\0') {
-          snprintf(reply, sizeof(reply), "@[%s] %d %s %s 📍 %s 🤖",
-                   sender_name, hop_count, hop_count == 1 ? "hop" : "hops", path_str, location);
-        } else {
-          snprintf(reply, sizeof(reply), "@[%s] %d %s %s 🤖",
-                   sender_name, hop_count, hop_count == 1 ? "hop" : "hops", path_str);
-        }
-      }
+      buildHopPath(body, sizeof(body), pkt);
     } else {
-      // Simple format for other channels with optional repeater
-      const char* warnings = getBotWarnings(hash_size, location[0] != '\0');
-
-      if (hop_count == 0) {
-        if (location[0] != '\0') {
-          snprintf(reply, sizeof(reply), "@[%s] direct 📍 %s%s 🤖", sender_name, location, warnings);
-        } else {
-          snprintf(reply, sizeof(reply), "@[%s] direct%s 🤖", sender_name, warnings);
-        }
-      } else {
-        const char* repeater = findBestRepeater(mesh, pkt);
-        if (repeater) {
-          // Show repeater: "3 hops via IT-LIG-MteBeigua-D 📍 Rasa (VA)"
-          if (location[0] != '\0') {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s 📍 %s%s 🤖",
-                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater, location, warnings);
-          } else {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s%s 🤖",
-                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater, warnings);
-          }
-        } else {
-          // No repeater known: "3 hops 📍 Rasa (VA)"
-          if (location[0] != '\0') {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s 📍 %s%s 🤖",
-                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", location, warnings);
-          } else {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s%s 🤖",
-                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", warnings);
-          }
-        }
-      }
+      buildHopSummary(body, sizeof(body), mesh, pkt);
     }
 
-    uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
-    if (mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply))) {
-      Serial.printf("[BOT] Sent test reply to channel %s\n", channel_name);
-    }
+    sendBotReply(mesh, channel_name, channel, sender_name, body, location, warnings);
     return true;
   }
 
-  // Handle !path or path command (only in #bot channel, only respond to 1-byte hashes)
+  // Handle !path or path command (only in #bot channel)
   if (strcmp(channel_name, "#bot") == 0 &&
       ((strncasecmp(message, "!path", 5) == 0 && (message[5] == '\0' || message[5] == ' ')) ||
        (strncasecmp(message, "path", 4) == 0 && (message[4] == '\0' || message[4] == ' ')))) {
@@ -407,94 +399,19 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
     uint8_t hop_count = pkt->getPathHashCount();
     uint8_t hash_size = pkt->getPathHashSize();
     const char* location = botGetLocation();
+    const char* warnings = getBotWarnings(hash_size, location[0] != '\0');
 
-    // Only respond if using 1-byte hashes (to warn about it)
+    char body[128];
     if (hash_size == 1) {
-      char reply[MAX_TEXT_LEN + 1];
-      const char* warnings = getBotWarnings(hash_size, location[0] != '\0');
+      buildHopPath(body, sizeof(body), pkt);
+    } else {
+      buildHopSummary(body, sizeof(body), mesh, pkt);
+    }
 
-      if (hop_count == 0) {
-        // Direct connection
-        if (location[0] != '\0') {
-          snprintf(reply, sizeof(reply), "@[%s] direct 📍 %s%s 🤖", sender_name, location, warnings);
-        } else {
-          snprintf(reply, sizeof(reply), "@[%s] direct%s 🤖", sender_name, warnings);
-        }
-      } else {
-        // Build path string with hex hashes
-        char path_str[128] = {0};
-        char* out = path_str;
-        size_t remaining = sizeof(path_str);
+    sendBotReply(mesh, channel_name, channel, sender_name, body, location, warnings);
 
-        for (uint8_t i = 0; i < hop_count && remaining > 10; i++) {
-          if (i > 0) {
-            int written = snprintf(out, remaining, "→");
-            out += written;
-            remaining -= written;
-          }
-
-          const uint8_t* hash = &pkt->path[i * hash_size];
-          for (uint8_t j = 0; j < hash_size && remaining > 3; j++) {
-            int written = snprintf(out, remaining, "%02x", hash[j]);
-            out += written;
-            remaining -= written;
-          }
-        }
-
-        if (location[0] != '\0') {
-          snprintf(reply, sizeof(reply), "@[%s] %d %s %s 📍 %s%s 🤖",
-                   sender_name, hop_count, hop_count == 1 ? "hop" : "hops", path_str, location, warnings);
-        } else {
-          snprintf(reply, sizeof(reply), "@[%s] %d %s %s%s 🤖",
-                   sender_name, hop_count, hop_count == 1 ? "hop" : "hops", path_str, warnings);
-        }
-      }
-
-      uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
-      if (mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply))) {
-        Serial.printf("[BOT] Sent path warning to channel %s\n", channel_name);
-      }
-    } else if (hash_size == 2 || hash_size == 3) {
-      // Reply with "via repeater" format for 2-byte and 3-byte hashes
-      char reply[MAX_TEXT_LEN + 1];
-      const char* warnings = getBotWarnings(hash_size, location[0] != '\0');
-
-      if (hop_count == 0) {
-        // Direct connection
-        if (location[0] != '\0') {
-          snprintf(reply, sizeof(reply), "@[%s] direct 📍 %s%s 🤖", sender_name, location, warnings);
-        } else {
-          snprintf(reply, sizeof(reply), "@[%s] direct%s 🤖", sender_name, warnings);
-        }
-      } else {
-        const char* repeater = findBestRepeater(mesh, pkt);
-        if (repeater) {
-          // Show repeater: "3 hops via IT-LIG-MteBeigua-D 📍 Rasa (VA)"
-          if (location[0] != '\0') {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s 📍 %s%s 🤖",
-                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater, location, warnings);
-          } else {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s via %s%s 🤖",
-                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", repeater, warnings);
-          }
-        } else {
-          // No repeater known: "3 hops 📍 Rasa (VA)"
-          if (location[0] != '\0') {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s 📍 %s%s 🤖",
-                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", location, warnings);
-          } else {
-            snprintf(reply, sizeof(reply), "@[%s] %d %s%s 🤖",
-                     sender_name, hop_count, hop_count == 1 ? "hop" : "hops", warnings);
-          }
-        }
-      }
-
-      uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
-      if (mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply))) {
-        Serial.printf("[BOT] Sent path reply to channel %s\n", channel_name);
-      }
-
-      // Debug logging
+    // Debug logging for 2/3-byte hashes
+    if (hash_size == 2 || hash_size == 3) {
       Serial.printf("[BOT] Path command with %d-byte hashes, %d hops:\n", hash_size, hop_count);
       uint8_t found_count = 0;
       for (uint8_t i = 0; i < hop_count; i++) {
@@ -515,21 +432,17 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       }
       Serial.printf("[BOT] Path resolution: %d/%d hops found\n", found_count, hop_count);
     }
-    return true;  // Command was handled (even if we didn't reply)
+
+    return true;
   }
 
   // Handle !echo command (case-insensitive)
   if (strncasecmp(message, "!echo ", 6) == 0) {
     const char* echo_text = message + 6;  // Skip "!echo "
 
-    // Create reply message: "@[Sender] Echo: <text> 🤖"
-    char reply[MAX_TEXT_LEN + 1];
-    snprintf(reply, sizeof(reply), "@[%s] Echo: %s 🤖", sender_name, echo_text);
-
-    uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
-    if (mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply))) {
-      Serial.printf("[BOT] Sent echo reply to channel %s\n", channel_name);
-    }
+    char body[MAX_TEXT_LEN];
+    snprintf(body, sizeof(body), "Echo: %s", echo_text);
+    sendBotReply(mesh, channel_name, channel, sender_name, body, nullptr, "");
     return true;
   }
 

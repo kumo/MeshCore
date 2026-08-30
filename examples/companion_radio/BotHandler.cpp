@@ -394,7 +394,12 @@ static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mes
     // Add middle hop if it exists and is different
     if (middle_hop && middle_hop != first_hop && middle_hop != last_hop) {
       // Determine separator based on gap
-      if (last_pos_written != 255 && middle_pos == last_pos_written + 1) {
+      if (last_pos_written == 255) {
+        // Previous was "...", just connect with arrow
+        int written = snprintf(out, remaining, "→%s", middle_hop);
+        out += written;
+        remaining -= written;
+      } else if (middle_pos == last_pos_written + 1) {
         // Consecutive, use simple arrow
         int written = snprintf(out, remaining, "→%s", middle_hop);
         out += written;
@@ -411,7 +416,12 @@ static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mes
     // Add last hop if it exists and is different
     if (last_hop && last_hop != first_hop) {
       // Determine separator based on gap
-      if (last_pos_written != 255 && last_pos == last_pos_written + 1) {
+      if (last_pos_written == 255) {
+        // Previous was "...", just connect with arrow
+        int written = snprintf(out, remaining, "→%s", last_hop);
+        out += written;
+        remaining -= written;
+      } else if (last_pos == last_pos_written + 1) {
         // Consecutive, use simple arrow
         int written = snprintf(out, remaining, "→%s", last_hop);
         out += written;

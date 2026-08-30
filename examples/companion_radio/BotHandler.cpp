@@ -313,9 +313,7 @@ static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mes
     return;
   }
 
-  // Resolve key hops: first, middle (prefer backbone), last (excluding destination)
-  uint8_t hops_to_check = (hop_count > 1) ? hop_count - 1 : hop_count;
-
+  // Resolve key hops: first, middle (prefer backbone), last (including destination)
   const char* first_hop = nullptr;
   const char* middle_hop = nullptr;
   const char* last_hop = nullptr;
@@ -324,7 +322,7 @@ static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mes
   uint8_t last_pos = 255;
 
   // Resolve first hop
-  if (hops_to_check > 0) {
+  if (hop_count > 0) {
     const uint8_t* hash = &pkt->path[0 * hash_size];
     ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
     if (contact) {
@@ -333,9 +331,9 @@ static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mes
     }
   }
 
-  // Resolve last hop (before destination)
-  if (hops_to_check > 1) {
-    uint8_t pos = hops_to_check - 1;
+  // Resolve last hop (including destination)
+  if (hop_count > 1) {
+    uint8_t pos = hop_count - 1;
     const uint8_t* hash = &pkt->path[pos * hash_size];
     ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
     if (contact) {
@@ -345,8 +343,8 @@ static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mes
   }
 
   // Find middle hop - prioritize backbone routers
-  if (hops_to_check > 2) {
-    for (uint8_t i = 1; i < hops_to_check - 1; i++) {
+  if (hop_count > 2) {
+    for (uint8_t i = 1; i < hop_count - 1; i++) {
       const uint8_t* hash = &pkt->path[i * hash_size];
       ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
       if (contact) {

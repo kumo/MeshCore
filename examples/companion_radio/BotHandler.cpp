@@ -319,6 +319,9 @@ static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mes
   const char* first_hop = nullptr;
   const char* middle_hop = nullptr;
   const char* last_hop = nullptr;
+  uint8_t first_pos = 255;
+  uint8_t middle_pos = 255;
+  uint8_t last_pos = 255;
 
   // Resolve first hop
   if (hops_to_check > 0) {
@@ -326,15 +329,18 @@ static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mes
     ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
     if (contact) {
       first_hop = contact->name;
+      first_pos = 0;
     }
   }
 
   // Resolve last hop (before destination)
   if (hops_to_check > 1) {
-    const uint8_t* hash = &pkt->path[(hops_to_check - 1) * hash_size];
+    uint8_t pos = hops_to_check - 1;
+    const uint8_t* hash = &pkt->path[pos * hash_size];
     ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
     if (contact) {
       last_hop = contact->name;
+      last_pos = pos;
     }
   }
 
@@ -349,9 +355,11 @@ static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mes
                            (contact->name[len-1] == 'D' || contact->name[len-1] == 'd'));
         if (is_backbone) {
           middle_hop = contact->name;
+          middle_pos = i;
           break;  // Found backbone, stop searching
         } else if (!middle_hop) {
           middle_hop = contact->name;  // Keep first resolvable as fallback
+          middle_pos = i;
         }
       }
     }
@@ -367,51 +375,60 @@ static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mes
       snprintf(path_str, sizeof(path_str), "...");
     }
   } else {
-    // Multiple hops - build with ellipsis
+    // Multiple hops - build with ellipsis for gaps
     char* out = path_str;
     size_t remaining = sizeof(path_str);
-    bool needs_separator = false;
+    uint8_t last_pos_written = 255;
 
+    // Add first hop or leading ellipsis
     if (first_hop) {
       int written = snprintf(out, remaining, "%s", first_hop);
       out += written;
       remaining -= written;
-      needs_separator = true;
+      last_pos_written = first_pos;
     } else {
       int written = snprintf(out, remaining, "...");
       out += written;
       remaining -= written;
-      needs_separator = true;
+      last_pos_written = 255;  // Unknown position
     }
 
+    // Add middle hop if it exists and is different
     if (middle_hop && middle_hop != first_hop && middle_hop != last_hop) {
-      if (needs_separator) {
-        int written = snprintf(out, remaining, "→...→");
+      // Determine separator based on gap
+      if (last_pos_written != 255 && middle_pos == last_pos_written + 1) {
+        // Consecutive, use simple arrow
+        int written = snprintf(out, remaining, "→%s", middle_hop);
+        out += written;
+        remaining -= written;
+      } else {
+        // Gap exists, use ellipsis
+        int written = snprintf(out, remaining, "→...→%s", middle_hop);
         out += written;
         remaining -= written;
       }
-      int written = snprintf(out, remaining, "%s", middle_hop);
-      out += written;
-      remaining -= written;
-      needs_separator = true;
+      last_pos_written = middle_pos;
     }
 
+    // Add last hop if it exists and is different
     if (last_hop && last_hop != first_hop) {
-      if (needs_separator) {
-        int written = snprintf(out, remaining, "→...→");
+      // Determine separator based on gap
+      if (last_pos_written != 255 && last_pos == last_pos_written + 1) {
+        // Consecutive, use simple arrow
+        int written = snprintf(out, remaining, "→%s", last_hop);
+        out += written;
+        remaining -= written;
+      } else {
+        // Gap exists, use ellipsis
+        int written = snprintf(out, remaining, "→...→%s", last_hop);
         out += written;
         remaining -= written;
       }
-      int written = snprintf(out, remaining, "%s", last_hop);
+    } else if (!middle_hop && !last_hop) {
+      // No middle or last resolved, show trailing ellipsis
+      int written = snprintf(out, remaining, "→...");
       out += written;
       remaining -= written;
-    } else if (!middle_hop && !last_hop) {
-      // No middle or last resolved, just show gap
-      if (needs_separator) {
-        int written = snprintf(out, remaining, "→...");
-        out += written;
-        remaining -= written;
-      }
     }
   }
 

@@ -29,12 +29,14 @@ All commands are case-insensitive and accept text after the command (e.g., "Test
 
 ### ping / !ping
 
-Simple connectivity test.
+Simple connectivity test with visual hop indicator.
 
 **Response (all channels):**
-```
-@[Bob] pong 🤖
-```
+- Direct connection: `@[Bob] 🏓 pong! 🤖`
+- 1-5 hops: `@[Bob] ⌢ ⌢ ⌢ 🏓 pong! 🤖` (one arc per hop)
+- 6+ hops: `@[Bob] … 10 hops … 🏓 pong! 🤖`
+
+The arc (⌢) representation makes hop count instantly scannable for nearby connections.
 
 ### test / !test / prova / !prova
 
@@ -116,7 +118,7 @@ The pin emoji (📍) keeps the format language-neutral while clearly indicating 
 
 ```
 User: ping
-Bot: @[Alice] pong 🤖
+Bot: @[Alice] ⌢ ⌢ ⌢ 🏓 pong! 🤖
 
 User: Test dalla Valceresio
 Bot: @[Alice] 3 hops via IT-LIG-MteBeigua-D 📍 Rasa (VA) 🤖

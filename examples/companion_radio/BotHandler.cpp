@@ -505,7 +505,34 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
   // Handle !ping command (case-insensitive)
   if ((strncasecmp(message, "!ping", 5) == 0 && (message[5] == '\0' || message[5] == ' ')) ||
       (strncasecmp(message, "ping", 4) == 0 && (message[4] == '\0' || message[4] == ' '))) {
-    sendBotReply(mesh, channel_name, channel, sender_name, "pong", nullptr, "");
+
+    uint8_t hop_count = pkt->getPathHashCount();
+    char body[64];
+
+    if (hop_count == 0) {
+      // Direct connection
+      snprintf(body, sizeof(body), "🏓 pong!");
+    } else if (hop_count <= 5) {
+      // Visual arc representation for 1-5 hops
+      char* out = body;
+      size_t remaining = sizeof(body);
+      for (uint8_t i = 0; i < hop_count && remaining > 10; i++) {
+        if (i > 0) {
+          int written = snprintf(out, remaining, " ");
+          out += written;
+          remaining -= written;
+        }
+        int written = snprintf(out, remaining, "⌢");
+        out += written;
+        remaining -= written;
+      }
+      snprintf(out, remaining, " 🏓 pong!");
+    } else {
+      // 6+ hops: numeric with ellipsis
+      snprintf(body, sizeof(body), "… %d hops … 🏓 pong!", hop_count);
+    }
+
+    sendBotReply(mesh, channel_name, channel, sender_name, body, nullptr, "");
     return true;
   }
 

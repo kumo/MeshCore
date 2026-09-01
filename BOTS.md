@@ -64,7 +64,12 @@ Shows path information and warns about configuration issues.
 
 **With 1-byte hashes:**
 - Shows full hex path (resolution unreliable with 1-byte)
-- `@[Bob] 3 hops a1→b2→c3 📍 Rasa (VA) | ⚠ use 2-bytes 🤖`
+- Example:
+  ```
+  @[Bob] 3 hops a1→b2→c3
+  📍 Rasa (VA) 🤖
+  ⚠ use 2-bytes
+  ```
 
 **With 2-byte or 3-byte hashes:**
 - Shows resolved node names in order: first → middle (prioritize backbone) → last
@@ -131,8 +136,14 @@ Bot: @[Charlie] 2 hops IT-LOM-Varese-R→...→IT-LIG-MteBeigua-D 📍 Rasa (VA)
 
 # With warnings:
 User: test
-Bot (sender no region): @[Dave] 2 hops via IT-LIG-MteBeigua-D 📍 Rasa (VA) | ⚠ set region it 🤖
+Bot (sender no region):
+  @[Dave] 2 hops via IT-LIG-MteBeigua-D
+  📍 Rasa (VA) 🤖
+  ⚠ set region it
 
 User (in #bot): path
-Bot (1-byte hash, sender no region): @[Eve] 3 hops a1→b2→c3 📍 Rasa (VA) | ⚠ use 2-bytes & set region it 🤖
+Bot (1-byte hash, sender no region):
+  @[Eve] 3 hops a1→b2→c3
+  📍 Rasa (VA) 🤖
+  ⚠ use 2-bytes & set region it
 ```

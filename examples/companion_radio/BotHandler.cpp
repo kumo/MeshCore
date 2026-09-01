@@ -80,11 +80,11 @@ static const char* getBotWarnings(uint8_t hash_size, bool has_region) {
   bool needs_region_warning = !has_region;
 
   if (needs_bytes_warning && needs_region_warning) {
-    return "⚠️ use 2-bytes & set region it\n";
+    return " | ⚠ use 2-bytes & set region it";
   } else if (needs_bytes_warning) {
-    return "⚠️ use 2-bytes\n";
+    return " | ⚠ use 2-bytes";
   } else if (needs_region_warning) {
-    return "⚠️ set region it\n";
+    return " | ⚠ set region it";
   } else {
     return "";
   }
@@ -449,10 +449,11 @@ static bool sendBotReply(MyMesh& mesh, const char* channel_name, mesh::GroupChan
   char reply[MAX_TEXT_LEN + 1];
 
   // Assemble: @[sender] {body} {location} {warnings} 🤖
+  // Note: warnings includes " | " prefix if non-empty
   if (location && location[0] != '\0') {
-    snprintf(reply, sizeof(reply), "@[%s] %s%s\n📍 %s 🤖", sender_name, warnings, body, location);
+    snprintf(reply, sizeof(reply), "@[%s] %s 📍 %s%s 🤖", sender_name, body, location, warnings);
   } else {
-    snprintf(reply, sizeof(reply), "@[%s] %s%s 🤖", sender_name, warnings, body);
+    snprintf(reply, sizeof(reply), "@[%s] %s%s 🤖", sender_name, body, warnings);
   }
 
   uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();

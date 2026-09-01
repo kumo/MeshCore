@@ -54,8 +54,8 @@ Shows hop count and location. "prova" is Italian alternative to "test".
 - Without repeater: `@[Bob] 3 hops 📍 Rasa (VA) 🤖`
 
 **Warnings:**
-- If sender hasn't set region: Adds `⚠️ set region it`
-- If using 1-byte hashes: Adds `⚠️ use 2-bytes`
+- If sender hasn't set region: Adds `⚠ set region it`
+- If using 1-byte hashes: Adds `⚠ use 2-bytes`
 - Both warnings appear if both conditions are true
 
 ### path / !path
@@ -64,7 +64,7 @@ Shows path information and warns about configuration issues.
 
 **With 1-byte hashes:**
 - Shows full hex path (resolution unreliable with 1-byte)
-- `@[Bob] 3 hops a1→b2→c3 📍 Rasa (VA) | ⚠️ use 2-bytes 🤖`
+- `@[Bob] 3 hops a1→b2→c3 📍 Rasa (VA) | ⚠ use 2-bytes 🤖`
 
 **With 2-byte or 3-byte hashes:**
 - Shows resolved node names in order: first → middle (prioritize backbone) → last
@@ -76,8 +76,8 @@ Shows path information and warns about configuration issues.
   - `@[Bob] 5 hops ...→IT-LIG-Backbone-D→...→LastHop 📍 Rasa (VA) 🤖` (first unknown)
 
 **Warnings:**
-- If sender hasn't set region: Adds `⚠️ set region it`
-- If using 1-byte hashes: Adds `⚠️ use 2-bytes`
+- If sender hasn't set region: Adds `⚠ set region it`
+- If using 1-byte hashes: Adds `⚠ use 2-bytes`
 - Both warnings appear if both conditions are true
 
 ### !echo <text>
@@ -131,8 +131,8 @@ Bot: @[Charlie] 2 hops IT-LOM-Varese-R→...→IT-LIG-MteBeigua-D 📍 Rasa (VA)
 
 # With warnings:
 User: test
-Bot (sender no region): @[Dave] 2 hops via IT-LIG-MteBeigua-D ⚠️ set region it 🤖
+Bot (sender no region): @[Dave] 2 hops via IT-LIG-MteBeigua-D 📍 Rasa (VA) | ⚠ set region it 🤖
 
 User (in #bot): path
-Bot (1-byte hash, sender no region): @[Eve] 3 hops a1→b2→c3 ⚠️ use 2-bytes & set region it 🤖
+Bot (1-byte hash, sender no region): @[Eve] 3 hops a1→b2→c3 📍 Rasa (VA) | ⚠ use 2-bytes & set region it 🤖
 ```

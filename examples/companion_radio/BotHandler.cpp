@@ -80,9 +80,9 @@ static const char* getBotWarnings(uint8_t hash_size, bool has_region) {
   bool needs_region_warning = !has_region;
 
   if (needs_bytes_warning && needs_region_warning) {
-    return "\n⚠ use 2-bytes & set region it";
+    return "\n⚠ set 2-byte & region it";
   } else if (needs_bytes_warning) {
-    return "\n⚠ use 2-bytes";
+    return "\n⚠ set 2-byte";
   } else if (needs_region_warning) {
     return "\n⚠ set region it";
   } else {

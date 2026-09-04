@@ -324,6 +324,50 @@ static bool matchesTestOrProva(const char* message) {
          matchesBangCommandWord(message, "prova");
 }
 
+static bool mentionMatchesNode(const char* mention, size_t mention_len, const char* node_name) {
+  if (mention == nullptr || node_name == nullptr || mention_len == 0) return false;
+
+  size_t node_len = strlen(node_name);
+  if (node_len == mention_len && strncmp(mention, node_name, mention_len) == 0) {
+    return true;
+  }
+
+  static constexpr const char* BOT_SUFFIX = " 🤖";
+  size_t suffix_len = strlen(BOT_SUFFIX);
+  if (node_len > suffix_len && strcmp(node_name + node_len - suffix_len, BOT_SUFFIX) == 0) {
+    size_t base_len = node_len - suffix_len;
+    if (base_len == mention_len && strncmp(mention, node_name, mention_len) == 0) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Skip leading @[node name] when it matches this companion
+// (e.g. "@[Rasa-R 🤖] path" or "@[Rasa-R 🤖]: path")
+static const char* stripLeadingBotMention(const char* message, const char* node_name) {
+  if (message == nullptr || node_name == nullptr || strncmp(message, "@[", 2) != 0) {
+    return message;
+  }
+
+  const char* end = strchr(message + 2, ']');
+  if (end == nullptr) return message;
+
+  size_t mention_len = (size_t)(end - (message + 2));
+  if (!mentionMatchesNode(message + 2, mention_len, node_name)) {
+    return message;
+  }
+
+  const char* cmd = end + 1;
+  while (*cmd == ' ' || *cmd == '\t') cmd++;
+  if (*cmd == ':') {
+    cmd++;
+    while (*cmd == ' ' || *cmd == '\t') cmd++;
+  }
+  return cmd;
+}
+
 static constexpr size_t BOT_REPLY_TARGET_LEN = 96;
 static constexpr size_t BOT_REPLY_MARGIN = 8;
 static constexpr const char* PATH_UNKNOWN = "...";
@@ -579,6 +623,11 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
 
   Serial.printf("[BOT] Sender: %s, Message: %s\n", sender_name, message);
 
+  const char* cmd = stripLeadingBotMention(message, mesh.getNodeName());
+  if (cmd != message) {
+    Serial.printf("[BOT] Command after mention strip: %s\n", cmd);
+  }
+
   const bool in_bot_channel = isBotChannel(channel_name);
   const char* location = botGetLocation();
 
@@ -589,7 +638,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       return false;
     }
 
-    if (matchesTestOrProva(message)) {
+    if (matchesTestOrProva(cmd)) {
 
       uint8_t hop_count = pkt->getPathHashCount();
       char body[128];
@@ -607,8 +656,8 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
   }
 
   // Handle !ping command (case-insensitive)
-  if ((strncasecmp(message, "!ping", 5) == 0 && (message[5] == '\0' || message[5] == ' ')) ||
-      (strncasecmp(message, "ping", 4) == 0 && (message[4] == '\0' || message[4] == ' '))) {
+  if ((strncasecmp(cmd, "!ping", 5) == 0 && (cmd[5] == '\0' || cmd[5] == ' ')) ||
+      (strncasecmp(cmd, "ping", 4) == 0 && (cmd[4] == '\0' || cmd[4] == ' '))) {
 
     uint8_t hop_count = pkt->getPathHashCount();
     char body[64];
@@ -641,7 +690,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
   }
 
   // Handle !test/test/!prova/prova command (case-insensitive)
-  if (matchesTestOrProva(message)) {
+  if (matchesTestOrProva(cmd)) {
 
     uint8_t hash_size = pkt->getPathHashSize();
     const char* warnings = getBotWarnings(hash_size, pkt->hasTransportCodes());
@@ -658,8 +707,8 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
   }
 
   // Handle !path or path command
-  if ((strncasecmp(message, "!path", 5) == 0 && (message[5] == '\0' || message[5] == ' ')) ||
-      (strncasecmp(message, "path", 4) == 0 && (message[4] == '\0' || message[4] == ' '))) {
+  if ((strncasecmp(cmd, "!path", 5) == 0 && (cmd[5] == '\0' || cmd[5] == ' ')) ||
+      (strncasecmp(cmd, "path", 4) == 0 && (cmd[4] == '\0' || cmd[4] == ' '))) {
 
     uint8_t hop_count = pkt->getPathHashCount();
     uint8_t hash_size = pkt->getPathHashSize();
@@ -704,8 +753,8 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
   }
 
   // Handle !echo command (case-insensitive)
-  if (strncasecmp(message, "!echo ", 6) == 0) {
-    const char* echo_text = message + 6;  // Skip "!echo "
+  if (strncasecmp(cmd, "!echo ", 6) == 0) {
+    const char* echo_text = cmd + 6;  // Skip "!echo "
 
     char body[MAX_TEXT_LEN];
     snprintf(body, sizeof(body), "Echo: %s", echo_text);

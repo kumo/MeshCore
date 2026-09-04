@@ -324,7 +324,116 @@ static bool matchesTestOrProva(const char* message) {
          matchesBangCommandWord(message, "prova");
 }
 
-static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mesh::Packet* pkt) {
+static constexpr size_t BOT_REPLY_TARGET_LEN = 96;
+static constexpr size_t BOT_REPLY_MARGIN = 8;
+static constexpr const char* PATH_UNKNOWN = "...";
+static constexpr const char* PATH_SEP = "→";
+static constexpr const char* PATH_GAP = "→...→";
+static constexpr uint8_t PATH_MAX_SELECTED = 32;
+
+static void sortPositions(uint8_t* positions, uint8_t count) {
+  for (uint8_t i = 1; i < count; i++) {
+    uint8_t key = positions[i];
+    int8_t j = (int8_t)i - 1;
+    while (j >= 0 && positions[j] > key) {
+      positions[j + 1] = positions[j];
+      j--;
+    }
+    positions[j + 1] = key;
+  }
+}
+
+static size_t measureJoinedPathLen(const uint8_t* positions, uint8_t count, const char** labels) {
+  if (count == 0) return 0;
+
+  const char* first_label = labels[positions[0]] ? labels[positions[0]] : PATH_UNKNOWN;
+  size_t len = strlen(first_label);
+
+  for (uint8_t i = 1; i < count; i++) {
+    uint8_t gap = positions[i] - positions[i - 1];
+    len += (gap == 1) ? strlen(PATH_SEP) : strlen(PATH_GAP);
+    const char* label = labels[positions[i]] ? labels[positions[i]] : PATH_UNKNOWN;
+    len += strlen(label);
+  }
+  return len;
+}
+
+static bool selectionContains(const uint8_t* positions, uint8_t count, uint8_t pos) {
+  for (uint8_t i = 0; i < count; i++) {
+    if (positions[i] == pos) return true;
+  }
+  return false;
+}
+
+static bool trySelectHop(uint8_t* positions, uint8_t& count, const char** labels, size_t path_budget,
+                         uint8_t pos) {
+  if (selectionContains(positions, count, pos)) return true;
+  if (count >= PATH_MAX_SELECTED) return false;
+
+  uint8_t trial[PATH_MAX_SELECTED];
+  memcpy(trial, positions, count);
+  trial[count] = pos;
+  uint8_t trial_count = count + 1;
+  sortPositions(trial, trial_count);
+
+  if (measureJoinedPathLen(trial, trial_count, labels) > path_budget) {
+    return false;
+  }
+
+  positions[count++] = pos;
+  sortPositions(positions, count);
+  return true;
+}
+
+static size_t measureBotPathBudget(const char* sender_name, const char* location,
+                                   const char* warnings, uint8_t hop_count) {
+  char hop_prefix[16];
+  snprintf(hop_prefix, sizeof(hop_prefix), "%d %s ", hop_count, hop_count == 1 ? "hop" : "hops");
+
+  size_t overhead = 0;
+  overhead += 2 + strlen(sender_name ? sender_name : "") + 1;  // @[sender]
+  overhead += strlen(hop_prefix);
+
+  if (location != nullptr && location[0] != '\0') {
+    overhead += 1 + strlen("📍 ") + strlen(location) + strlen(" 🤖");
+  } else {
+    overhead += strlen(" 🤖");
+  }
+  if (warnings != nullptr && warnings[0] != '\0') {
+    overhead += strlen(warnings);
+  }
+  overhead += BOT_REPLY_MARGIN;
+
+  if (overhead >= BOT_REPLY_TARGET_LEN) return 32;
+  return BOT_REPLY_TARGET_LEN - overhead;
+}
+
+static void joinPathFragments(char* path_str, size_t path_str_len, const uint8_t* positions,
+                              uint8_t count, const char** labels) {
+  path_str[0] = '\0';
+  if (count == 0) return;
+
+  char* out = path_str;
+  size_t remaining = path_str_len;
+
+  const char* first_label = labels[positions[0]] ? labels[positions[0]] : PATH_UNKNOWN;
+  int written = snprintf(out, remaining, "%s", first_label);
+  out += written;
+  remaining -= written;
+
+  for (uint8_t i = 1; i < count && remaining > 1; i++) {
+    uint8_t gap = positions[i] - positions[i - 1];
+    const char* sep = (gap == 1) ? PATH_SEP : PATH_GAP;
+    const char* label = labels[positions[i]] ? labels[positions[i]] : PATH_UNKNOWN;
+
+    written = snprintf(out, remaining, "%s%s", sep, label);
+    out += written;
+    remaining -= written;
+  }
+}
+
+static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mesh::Packet* pkt,
+                                  size_t path_budget) {
   uint8_t hop_count = pkt->getPathHashCount();
   uint8_t hash_size = pkt->getPathHashSize();
 
@@ -333,133 +442,70 @@ static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mes
     return;
   }
 
-  // Resolve key hops: first, middle (prefer backbone), last (including destination)
-  const char* first_hop = nullptr;
-  const char* middle_hop = nullptr;
-  const char* last_hop = nullptr;
-  uint8_t first_pos = 255;
-  uint8_t middle_pos = 255;
-  uint8_t last_pos = 255;
-
-  // Resolve first hop
-  if (hop_count > 0) {
-    const uint8_t* hash = &pkt->path[0 * hash_size];
-    ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
-    if (contact) {
-      first_hop = contact->name;
-      first_pos = 0;
-    }
+  if (hop_count > PATH_MAX_SELECTED) {
+    snprintf(body, body_len, "%d %s ...", hop_count, hop_count == 1 ? "hop" : "hops");
+    return;
   }
 
-  // Resolve last hop (including destination)
+  const char* labels[PATH_MAX_SELECTED] = {0};
+  for (uint8_t i = 0; i < hop_count && i < PATH_MAX_SELECTED; i++) {
+    ContactInfo* contact = mesh.lookupContactByPubKey(&pkt->path[i * hash_size], hash_size);
+    if (contact) labels[i] = contact->name;
+  }
+
+  uint8_t positions[PATH_MAX_SELECTED];
+  uint8_t count = 0;
+  positions[count++] = 0;
   if (hop_count > 1) {
-    uint8_t pos = hop_count - 1;
-    const uint8_t* hash = &pkt->path[pos * hash_size];
-    ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
-    if (contact) {
-      last_hop = contact->name;
-      last_pos = pos;
-    }
+    positions[count++] = hop_count - 1;
+    sortPositions(positions, count);
   }
 
-  // Find middle hop - prioritize backbone routers
+  if (count > 1 && measureJoinedPathLen(positions, count, labels) > path_budget) {
+    count = 1;
+  }
+
   if (hop_count > 2) {
-    for (uint8_t i = 1; i < hop_count - 1; i++) {
-      const uint8_t* hash = &pkt->path[i * hash_size];
-      ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
-      if (contact) {
-        size_t len = strlen(contact->name);
-        bool is_backbone = (len >= 2 && contact->name[len-2] == '-' &&
-                           (contact->name[len-1] == 'D' || contact->name[len-1] == 'd'));
-        if (is_backbone) {
-          middle_hop = contact->name;
-          middle_pos = i;
-          break;  // Found backbone, stop searching
-        } else if (!middle_hop) {
-          middle_hop = contact->name;  // Keep first resolvable as fallback
-          middle_pos = i;
+    uint8_t fwd = 1;
+    uint8_t bwd = hop_count - 2;
+    bool forward_turn = true;
+    bool budget_exhausted = false;
+
+    while (fwd <= bwd && !budget_exhausted) {
+      bool added = false;
+
+      if (forward_turn) {
+        for (uint8_t i = fwd; i <= bwd; i++) {
+          if (labels[i] == nullptr) continue;
+          if (trySelectHop(positions, count, labels, path_budget, i)) {
+            fwd = i + 1;
+            added = true;
+            break;
+          }
+          budget_exhausted = true;
+          break;
         }
+        if (!added && !budget_exhausted) fwd = bwd + 1;
+      } else {
+        for (int16_t i = bwd; i >= (int16_t)fwd; i--) {
+          if (labels[(uint8_t)i] == nullptr) continue;
+          if (trySelectHop(positions, count, labels, path_budget, (uint8_t)i)) {
+            bwd = (uint8_t)i - 1;
+            added = true;
+            break;
+          }
+          budget_exhausted = true;
+          break;
+        }
+        if (!added && !budget_exhausted) bwd = fwd - 1;
       }
+
+      forward_turn = !forward_turn;
     }
   }
 
-  // Build path string
-  char path_str[128] = {0};
-  if (hop_count == 1) {
-    // Single hop
-    if (first_hop) {
-      snprintf(path_str, sizeof(path_str), "%s", first_hop);
-    } else {
-      snprintf(path_str, sizeof(path_str), "...");
-    }
-  } else {
-    // Multiple hops - build with ellipsis for gaps
-    char* out = path_str;
-    size_t remaining = sizeof(path_str);
-    uint8_t last_pos_written = 255;
-
-    // Add first hop or leading ellipsis
-    if (first_hop) {
-      int written = snprintf(out, remaining, "%s", first_hop);
-      out += written;
-      remaining -= written;
-      last_pos_written = first_pos;
-    } else {
-      int written = snprintf(out, remaining, "...");
-      out += written;
-      remaining -= written;
-      last_pos_written = 255;  // Unknown position
-    }
-
-    // Add middle hop if it exists and is different
-    if (middle_hop && middle_hop != first_hop && middle_hop != last_hop) {
-      // Determine separator based on gap
-      if (last_pos_written == 255) {
-        // Previous was "...", just connect with arrow
-        int written = snprintf(out, remaining, "→%s", middle_hop);
-        out += written;
-        remaining -= written;
-      } else if (middle_pos == last_pos_written + 1) {
-        // Consecutive, use simple arrow
-        int written = snprintf(out, remaining, "→%s", middle_hop);
-        out += written;
-        remaining -= written;
-      } else {
-        // Gap exists, use ellipsis
-        int written = snprintf(out, remaining, "→...→%s", middle_hop);
-        out += written;
-        remaining -= written;
-      }
-      last_pos_written = middle_pos;
-    }
-
-    // Add last hop if it exists and is different
-    if (last_hop && last_hop != first_hop) {
-      // Determine separator based on gap
-      if (last_pos_written == 255) {
-        // Previous was "...", just connect with arrow
-        int written = snprintf(out, remaining, "→%s", last_hop);
-        out += written;
-        remaining -= written;
-      } else if (last_pos == last_pos_written + 1) {
-        // Consecutive, use simple arrow
-        int written = snprintf(out, remaining, "→%s", last_hop);
-        out += written;
-        remaining -= written;
-      } else {
-        // Gap exists, use ellipsis
-        int written = snprintf(out, remaining, "→...→%s", last_hop);
-        out += written;
-        remaining -= written;
-      }
-    } else if (!middle_hop && !last_hop) {
-      // No middle or last resolved, show trailing ellipsis
-      int written = snprintf(out, remaining, "→...");
-      out += written;
-      remaining -= written;
-    }
-  }
-
+  char path_str[128];
+  joinPathFragments(path_str, sizeof(path_str), positions, count, labels);
   snprintf(body, body_len, "%d %s %s", hop_count, hop_count == 1 ? "hop" : "hops", path_str);
 }
 
@@ -625,7 +671,8 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       buildHopPath(body, sizeof(body), pkt);
     } else {
       // 2/3-byte hashes: show resolved names with ellipsis
-      buildHopPathWithNames(body, sizeof(body), mesh, pkt);
+      size_t path_budget = measureBotPathBudget(sender_name, location, warnings, hop_count);
+      buildHopPathWithNames(body, sizeof(body), mesh, pkt, path_budget);
     }
 
     sendBotReply(mesh, channel_name, channel, sender_name, body, location, warnings);

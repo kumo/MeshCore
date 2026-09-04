@@ -304,6 +304,26 @@ static void buildHopSummary(char* body, size_t body_len, MyMesh& mesh, mesh::Pac
   }
 }
 
+// Match command word at start; allows trailing text (e.g. "test da Como")
+static bool matchesCommandWord(const char* message, const char* word) {
+  size_t len = strlen(word);
+  if (strncasecmp(message, word, len) != 0) return false;
+  char next = message[len];
+  return next == '\0' || next == ' ' || next == '\t';
+}
+
+static bool matchesBangCommandWord(const char* message, const char* word) {
+  if (message == nullptr || message[0] != '!') return false;
+  return matchesCommandWord(message + 1, word);
+}
+
+static bool matchesTestOrProva(const char* message) {
+  return matchesCommandWord(message, "test") ||
+         matchesBangCommandWord(message, "test") ||
+         matchesCommandWord(message, "prova") ||
+         matchesBangCommandWord(message, "prova");
+}
+
 static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mesh::Packet* pkt) {
   uint8_t hop_count = pkt->getPathHashCount();
   uint8_t hash_size = pkt->getPathHashSize();
@@ -520,10 +540,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       return false;
     }
 
-    if ((strncasecmp(message, "!test", 5) == 0 && (message[5] == '\0' || message[5] == ' ')) ||
-        (strncasecmp(message, "test", 4) == 0 && (message[4] == '\0' || message[4] == ' ')) ||
-        (strncasecmp(message, "!prova", 6) == 0 && (message[6] == '\0' || message[6] == ' ')) ||
-        (strncasecmp(message, "prova", 5) == 0 && (message[5] == '\0' || message[5] == ' '))) {
+    if (matchesTestOrProva(message)) {
 
       uint8_t hop_count = pkt->getPathHashCount();
       char body[128];
@@ -575,10 +592,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
   }
 
   // Handle !test/test/!prova/prova command (case-insensitive)
-  if ((strncasecmp(message, "!test", 5) == 0 && (message[5] == '\0' || message[5] == ' ')) ||
-      (strncasecmp(message, "test", 4) == 0 && (message[4] == '\0' || message[4] == ' ')) ||
-      (strncasecmp(message, "!prova", 6) == 0 && (message[6] == '\0' || message[6] == ' ')) ||
-      (strncasecmp(message, "prova", 5) == 0 && (message[5] == '\0' || message[5] == ' '))) {
+  if (matchesTestOrProva(message)) {
 
     uint8_t hash_size = pkt->getPathHashSize();
     const char* warnings = getBotWarnings(hash_size, pkt->hasTransportCodes());

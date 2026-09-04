@@ -305,6 +305,12 @@ static void buildHopSummary(char* body, size_t body_len, MyMesh& mesh, mesh::Pac
 }
 
 // Match command word at start; allows trailing text (e.g. "test da Como")
+static const char* skipLeadingWhitespace(const char* s) {
+  if (s == nullptr) return s;
+  while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r') s++;
+  return s;
+}
+
 static bool matchesCommandWord(const char* message, const char* word) {
   size_t len = strlen(word);
   if (strncasecmp(message, word, len) != 0) return false;
@@ -360,12 +366,8 @@ static const char* stripLeadingBotMention(const char* message, const char* node_
   }
 
   const char* cmd = end + 1;
-  while (*cmd == ' ' || *cmd == '\t') cmd++;
-  if (*cmd == ':') {
-    cmd++;
-    while (*cmd == ' ' || *cmd == '\t') cmd++;
-  }
-  return cmd;
+  if (*cmd == ':') cmd++;
+  return skipLeadingWhitespace(cmd);
 }
 
 static constexpr size_t BOT_REPLY_MARGIN = 8;
@@ -637,7 +639,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
     sender_name[name_len] = '\0';
 
     message++;  // Skip the ':'
-    while (*message == ' ') message++;  // Skip spaces after ':'
+    message = skipLeadingWhitespace(message);
   } else {
     sender_name[0] = '\0';  // No sender name found
     message = text;  // No prefix, use whole text
@@ -645,7 +647,8 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
 
   Serial.printf("[BOT] Sender: %s, Message: %s\n", sender_name, message);
 
-  const char* cmd = stripLeadingBotMention(message, mesh.getNodeName());
+  const char* cmd = skipLeadingWhitespace(
+      stripLeadingBotMention(skipLeadingWhitespace(message), mesh.getNodeName()));
   if (cmd != message) {
     Serial.printf("[BOT] Command after mention strip: %s\n", cmd);
   }

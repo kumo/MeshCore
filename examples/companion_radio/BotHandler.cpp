@@ -443,6 +443,22 @@ static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mes
   snprintf(body, body_len, "%d %s %s", hop_count, hop_count == 1 ? "hop" : "hops", path_str);
 }
 
+static bool isBotChannel(const char* channel_name) {
+  return strcmp(channel_name, "#bot") == 0 ||
+         strcmp(channel_name, "#test") == 0 ||
+         strcmp(channel_name, "#ping") == 0 ||
+         strcmp(channel_name, "#prove") == 0;
+}
+
+static bool sendCasualReply(MyMesh& mesh, mesh::GroupChannel& channel, const char* text) {
+  uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
+  if (mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), text, strlen(text))) {
+    Serial.printf("[BOT] Sent casual reply\n");
+    return true;
+  }
+  return false;
+}
+
 static bool sendBotReply(MyMesh& mesh, const char* channel_name, mesh::GroupChannel& channel,
                          const char* sender_name, const char* body,
                          const char* location, const char* warnings) {
@@ -475,15 +491,6 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
 
   Serial.printf("[BOT] Channel: %s, Text: %s\n", channel_name, text);
 
-  // Only respond in allowed channels
-  if (strcmp(channel_name, "#bot") != 0 &&
-      strcmp(channel_name, "#test") != 0 &&
-      strcmp(channel_name, "#ping") != 0 &&
-      strcmp(channel_name, "#prove") != 0) {
-    Serial.printf("[BOT] Not an allowed channel, ignoring\n");
-    return false;  // Not an allowed channel
-  }
-
   // Extract sender name and message from "SenderName: message" format
   static char sender_name[64];
   const char* message = strchr(text, ':');
@@ -502,6 +509,36 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
   }
 
   Serial.printf("[BOT] Sender: %s, Message: %s\n", sender_name, message);
+
+  const bool in_bot_channel = isBotChannel(channel_name);
+  const char* location = botGetLocation();
+
+  // Public/other channels: casual replies only when location is configured
+  if (!in_bot_channel) {
+    if (location[0] == '\0') {
+      Serial.printf("[BOT] Not a bot channel and no location set, ignoring\n");
+      return false;
+    }
+
+    if ((strncasecmp(message, "!test", 5) == 0 && (message[5] == '\0' || message[5] == ' ')) ||
+        (strncasecmp(message, "test", 4) == 0 && (message[4] == '\0' || message[4] == ' ')) ||
+        (strncasecmp(message, "!prova", 6) == 0 && (message[6] == '\0' || message[6] == ' ')) ||
+        (strncasecmp(message, "prova", 5) == 0 && (message[5] == '\0' || message[5] == ' '))) {
+
+      uint8_t hop_count = pkt->getPathHashCount();
+      char body[128];
+      if (hop_count == 0) {
+        snprintf(body, sizeof(body), "direct da %s", location);
+      } else {
+        snprintf(body, sizeof(body), "%d %s da %s", hop_count,
+                 hop_count == 1 ? "hop" : "hops", location);
+      }
+      sendCasualReply(mesh, channel, body);
+      return true;
+    }
+
+    return false;
+  }
 
   // Handle !ping command (case-insensitive)
   if ((strncasecmp(message, "!ping", 5) == 0 && (message[5] == '\0' || message[5] == ' ')) ||
@@ -544,7 +581,6 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       (strncasecmp(message, "prova", 5) == 0 && (message[5] == '\0' || message[5] == ' '))) {
 
     uint8_t hash_size = pkt->getPathHashSize();
-    const char* location = botGetLocation();
     const char* warnings = getBotWarnings(hash_size, pkt->hasTransportCodes());
 
     char body[128];
@@ -564,7 +600,6 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
 
     uint8_t hop_count = pkt->getPathHashCount();
     uint8_t hash_size = pkt->getPathHashSize();
-    const char* location = botGetLocation();
     const char* warnings = getBotWarnings(hash_size, pkt->hasTransportCodes());
 
     char body[128];

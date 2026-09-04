@@ -33,6 +33,7 @@ bool botHandleDM(MyMesh& mesh, const ContactInfo& from, mesh::Packet* pkt, const
 
 // Handle bot commands in channels
 // Returns true if command was handled and reply sent
-// Only handles commands in allowed channels: #bot, #test, #ping, #prove
+// Bot channels (#bot, #test, #ping, #prove): full bot replies.
+// Other channels: casual test/prova replies when location is set.
 bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel& channel,
                       mesh::Packet* pkt, const char* text);

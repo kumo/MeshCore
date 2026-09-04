@@ -735,6 +735,8 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
     uint8_t hop_count = pkt->getPathHashCount();
     uint8_t hash_size = pkt->getPathHashSize();
     const char* warnings = getBotWarnings(hash_size, pkt->hasTransportCodes());
+    // Named paths omit location to free budget for repeater names; hex paths keep it.
+    const char* path_location = (hash_size == 1) ? location : nullptr;
 
     char body[128];
     if (hash_size == 1) {
@@ -742,12 +744,12 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       buildHopPath(body, sizeof(body), pkt);
     } else {
       // 2/3-byte hashes: show resolved names with ellipsis
-      size_t path_budget = measureBotPathBudget(sender_name, location, warnings, hop_count,
+      size_t path_budget = measureBotPathBudget(sender_name, path_location, warnings, hop_count,
                                                 mesh.getNodeName());
       buildHopPathWithNames(body, sizeof(body), mesh, pkt, path_budget);
     }
 
-    sendBotReply(mesh, channel_name, channel, sender_name, body, location, warnings);
+    sendBotReply(mesh, channel_name, channel, sender_name, body, path_location, warnings);
 
     // Debug logging for 2/3-byte hashes
     if (hash_size == 2 || hash_size == 3) {

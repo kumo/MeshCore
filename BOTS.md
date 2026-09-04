@@ -79,11 +79,12 @@ Shows path information and warns about configuration issues.
 **With 2-byte or 3-byte hashes:**
 - Shows resolved node names where known in contacts: first → ... → last, filling middles in path order as space allows
 - Uses `...` for gaps where nodes aren't in contacts
+- Location is omitted (path names use the available budget; use `test`/`prova` for location)
 - Examples:
-  - `@[Bob] 1 hop IT-LIG-Rasa-R 📍 Rasa (VA) 🤖`
-  - `@[Bob] 3 hops FirstHop→...→LastHop 📍 Rasa (VA) 🤖`
-  - `@[Bob] 5 hops FirstHop→...→IT-LIG-Backbone-D→...→LastHop 📍 Rasa (VA) 🤖`
-  - `@[Bob] 5 hops ...→IT-LIG-Backbone-D→...→LastHop 📍 Rasa (VA) 🤖` (first unknown)
+  - `@[Bob] 1 hop IT-LIG-Rasa-R 🤖`
+  - `@[Bob] 3 hops FirstHop→...→LastHop 🤖`
+  - `@[Bob] 5 hops FirstHop→...→IT-LIG-Backbone-D→...→LastHop 🤖`
+  - `@[Bob] 5 hops ...→IT-LIG-Backbone-D→...→LastHop 🤖` (first unknown)
 
 **Warnings:**
 - If sender hasn't set region: Adds `⚠ set region it`
@@ -121,7 +122,7 @@ When showing "via X" in messages, the bot selects the most relevant repeater usi
 All bot responses follow this pattern:
 - `@[SenderName]` - Indicates who the response is for
 - Message content - Hop count, repeater info, etc.
-- `📍 Location` - Location pin emoji before location (if set)
+- `📍 Location` - Location pin emoji before location (if set; omitted on named `path` replies)
 - `🤖` - Bot emoji at end to indicate automated response
 
 The pin emoji (📍) keeps the format language-neutral while clearly indicating the destination.
@@ -139,7 +140,7 @@ User: Prova mobile
 Bot: @[Bob] 1 hop via IT-LOM-VA-Rasa-R 📍 Rasa (VA) 🤖
 
 User (in #bot): path
-Bot: @[Charlie] 2 hops IT-LIG-MteBeigua-D→IT-LOM-VA-Rasa-R 📍 Rasa (VA) 🤖
+Bot: @[Charlie] 2 hops IT-LIG-MteBeigua-D→IT-LOM-VA-Rasa-R 🤖
 
 # With warnings:
 User: test

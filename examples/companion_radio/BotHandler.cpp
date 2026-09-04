@@ -471,8 +471,11 @@ static bool isBotChannel(const char* channel_name) {
 }
 
 static bool sendCasualReply(MyMesh& mesh, mesh::GroupChannel& channel, const char* text) {
+  char reply[MAX_TEXT_LEN + 1];
+  snprintf(reply, sizeof(reply), "%s 🤖", text);
+
   uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
-  if (mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), text, strlen(text))) {
+  if (mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply))) {
     Serial.printf("[BOT] Sent casual reply\n");
     return true;
   }

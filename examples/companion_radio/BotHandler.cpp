@@ -577,9 +577,14 @@ static bool isBotChannel(const char* channel_name) {
          strcmp(channel_name, "#prove") == 0;
 }
 
-static bool sendCasualReply(MyMesh& mesh, mesh::GroupChannel& channel, const char* text) {
+static bool sendCasualReply(MyMesh& mesh, mesh::GroupChannel& channel,
+                            const char* sender_name, const char* text) {
   char reply[MAX_TEXT_LEN + 1];
-  snprintf(reply, sizeof(reply), "%s 🤖", text);
+  if (sender_name != nullptr && sender_name[0] != '\0') {
+    snprintf(reply, sizeof(reply), "@[%s] %s 🤖", sender_name, text);
+  } else {
+    snprintf(reply, sizeof(reply), "%s 🤖", text);
+  }
 
   uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
   if (mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply))) {
@@ -665,7 +670,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
         snprintf(body, sizeof(body), "%d %s da %s", hop_count,
                  hop_count == 1 ? "hop" : "hops", location);
       }
-      sendCasualReply(mesh, channel, body);
+      sendCasualReply(mesh, channel, sender_name, body);
       return true;
     }
 

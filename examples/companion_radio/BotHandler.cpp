@@ -285,7 +285,7 @@ static void buildHopPath(char* body, size_t body_len, mesh::Packet* pkt) {
     }
   }
 
-  snprintf(body, body_len, "%d %s %s", hop_count, hop_count == 1 ? "hop" : "hops", path_str);
+  snprintf(body, body_len, "%d %s: %s", hop_count, hop_count == 1 ? "hop" : "hops", path_str);
 }
 
 static void buildHopSummary(char* body, size_t body_len, MyMesh& mesh, mesh::Packet* pkt) {
@@ -371,9 +371,8 @@ static const char* stripLeadingBotMention(const char* message, const char* node_
 }
 
 static constexpr size_t BOT_REPLY_MARGIN = 8;
-static constexpr const char* PATH_UNKNOWN = "...";
-static constexpr const char* PATH_SEP = "→";
-static constexpr const char* PATH_GAP = "→...→";
+static constexpr const char* PATH_SEP = "→";   // adjacent known hops
+static constexpr const char* PATH_GAP = "⇢";  // non-adjacent / hidden hops
 static constexpr uint8_t PATH_MAX_SELECTED = 32;
 
 static void sortPositions(uint8_t* positions, uint8_t count) {
@@ -388,17 +387,22 @@ static void sortPositions(uint8_t* positions, uint8_t count) {
   }
 }
 
-static size_t measureJoinedPathLen(const uint8_t* positions, uint8_t count, const char** labels) {
+static size_t measureJoinedPathLen(const uint8_t* positions, uint8_t count, const char** labels,
+                                   uint8_t hop_count, bool trailing_ellipsis) {
   if (count == 0) return 0;
 
-  const char* first_label = labels[positions[0]] ? labels[positions[0]] : PATH_UNKNOWN;
-  size_t len = strlen(first_label);
+  size_t len = 0;
+  if (positions[0] > 0) len += strlen(PATH_GAP);
+  len += strlen(labels[positions[0]]);
 
   for (uint8_t i = 1; i < count; i++) {
     uint8_t gap = positions[i] - positions[i - 1];
     len += (gap == 1) ? strlen(PATH_SEP) : strlen(PATH_GAP);
-    const char* label = labels[positions[i]] ? labels[positions[i]] : PATH_UNKNOWN;
-    len += strlen(label);
+    len += strlen(labels[positions[i]]);
+  }
+
+  if (trailing_ellipsis || positions[count - 1] < hop_count - 1) {
+    len += strlen(PATH_GAP);
   }
   return len;
 }
@@ -411,9 +415,10 @@ static bool selectionContains(const uint8_t* positions, uint8_t count, uint8_t p
 }
 
 static bool trySelectHop(uint8_t* positions, uint8_t& count, const char** labels, size_t path_budget,
-                         uint8_t pos) {
+                         uint8_t hop_count, bool trailing_ellipsis, uint8_t pos) {
   if (selectionContains(positions, count, pos)) return true;
   if (count >= PATH_MAX_SELECTED) return false;
+  if (labels[pos] == nullptr) return false;
 
   uint8_t trial[PATH_MAX_SELECTED];
   memcpy(trial, positions, count);
@@ -421,7 +426,8 @@ static bool trySelectHop(uint8_t* positions, uint8_t& count, const char** labels
   uint8_t trial_count = count + 1;
   sortPositions(trial, trial_count);
 
-  if (measureJoinedPathLen(trial, trial_count, labels) > path_budget) {
+  bool trail = trailing_ellipsis || trial[trial_count - 1] < hop_count - 1;
+  if (measureJoinedPathLen(trial, trial_count, labels, hop_count, trail) > path_budget) {
     return false;
   }
 
@@ -434,7 +440,7 @@ static size_t measureBotPathBudget(const char* sender_name, const char* location
                                    const char* warnings, uint8_t hop_count,
                                    const char* node_name) {
   char hop_prefix[16];
-  snprintf(hop_prefix, sizeof(hop_prefix), "%d %s ", hop_count, hop_count == 1 ? "hop" : "hops");
+  snprintf(hop_prefix, sizeof(hop_prefix), "%d %s: ", hop_count, hop_count == 1 ? "hop" : "hops");
 
   size_t reply_fixed = 2 + strlen(sender_name ? sender_name : "") + 1 + strlen(hop_prefix);
   if (location != nullptr && location[0] != '\0') {
@@ -457,8 +463,6 @@ static size_t measureBotPathBudget(const char* sender_name, const char* location
   return packet_limit - reply_fixed - BOT_REPLY_MARGIN;
 }
 
-static constexpr const char* PATH_TRAIL = "→...";
-
 static void joinPathFragments(char* path_str, size_t path_str_len, const uint8_t* positions,
                               uint8_t count, const char** labels, uint8_t hop_count,
                               bool trailing_ellipsis) {
@@ -468,26 +472,28 @@ static void joinPathFragments(char* path_str, size_t path_str_len, const uint8_t
   char* out = path_str;
   size_t remaining = path_str_len;
 
-  const char* first_label = labels[positions[0]] ? labels[positions[0]] : PATH_UNKNOWN;
-  int written = snprintf(out, remaining, "%s", first_label);
+  if (positions[0] > 0 && remaining > 1) {
+    int written = snprintf(out, remaining, "%s", PATH_GAP);
+    out += written;
+    remaining -= written;
+  }
+
+  int written = snprintf(out, remaining, "%s", labels[positions[0]]);
   out += written;
   remaining -= written;
 
   for (uint8_t i = 1; i < count && remaining > 1; i++) {
     uint8_t gap = positions[i] - positions[i - 1];
     const char* sep = (gap == 1) ? PATH_SEP : PATH_GAP;
-    const char* label = labels[positions[i]] ? labels[positions[i]] : PATH_UNKNOWN;
 
-    written = snprintf(out, remaining, "%s%s", sep, label);
+    written = snprintf(out, remaining, "%s%s", sep, labels[positions[i]]);
     out += written;
     remaining -= written;
   }
 
-  if (trailing_ellipsis && remaining > strlen(PATH_TRAIL)) {
-    snprintf(out, remaining, "%s", PATH_TRAIL);
-  } else if (hop_count > 1 && count > 0 && positions[count - 1] < hop_count - 1 &&
-             remaining > strlen(PATH_TRAIL)) {
-    snprintf(out, remaining, "%s", PATH_TRAIL);
+  if ((trailing_ellipsis || positions[count - 1] < hop_count - 1) &&
+      remaining > strlen(PATH_GAP)) {
+    snprintf(out, remaining, "%s", PATH_GAP);
   }
 }
 
@@ -495,6 +501,7 @@ static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mes
                                   size_t path_budget) {
   uint8_t hop_count = pkt->getPathHashCount();
   uint8_t hash_size = pkt->getPathHashSize();
+  const char* hop_word = (hop_count == 1) ? "hop" : "hops";
 
   if (hop_count == 0) {
     snprintf(body, body_len, "direct");
@@ -502,7 +509,7 @@ static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mes
   }
 
   if (hop_count > PATH_MAX_SELECTED) {
-    snprintf(body, body_len, "%d %s ...", hop_count, hop_count == 1 ? "hop" : "hops");
+    snprintf(body, body_len, "%d %s:", hop_count, hop_word);
     return;
   }
 
@@ -512,24 +519,38 @@ static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mes
     if (contact) labels[i] = contact->name;
   }
 
+  int8_t first_known = -1;
+  int8_t last_known = -1;
+  for (uint8_t i = 0; i < hop_count; i++) {
+    if (labels[i] == nullptr) continue;
+    if (first_known < 0) first_known = (int8_t)i;
+    last_known = (int8_t)i;
+  }
+
+  if (first_known < 0) {
+    snprintf(body, body_len, "%d %s:", hop_count, hop_word);
+    return;
+  }
+
   uint8_t positions[PATH_MAX_SELECTED];
   uint8_t count = 0;
   bool trailing_ellipsis = false;
 
-  positions[count++] = 0;
-  if (hop_count > 1) {
-    uint8_t anchors[2] = {0, (uint8_t)(hop_count - 1)};
-    if (measureJoinedPathLen(anchors, 2, labels) <= path_budget) {
-      positions[count++] = hop_count - 1;
+  positions[count++] = (uint8_t)first_known;
+  if (last_known != first_known) {
+    uint8_t anchors[2] = {(uint8_t)first_known, (uint8_t)last_known};
+    bool trail = (uint8_t)last_known < hop_count - 1;
+    if (measureJoinedPathLen(anchors, 2, labels, hop_count, trail) <= path_budget) {
+      positions[count++] = (uint8_t)last_known;
       sortPositions(positions, count);
     } else {
       trailing_ellipsis = true;
     }
   }
 
-  if (hop_count > 2 && !trailing_ellipsis) {
-    uint8_t fwd = 1;
-    uint8_t bwd = hop_count - 2;
+  if (last_known > first_known && !trailing_ellipsis) {
+    uint8_t fwd = (uint8_t)first_known + 1;
+    uint8_t bwd = (uint8_t)last_known - 1;
     bool forward_turn = true;
     bool budget_exhausted = false;
 
@@ -539,7 +560,7 @@ static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mes
       if (forward_turn) {
         for (uint8_t i = fwd; i <= bwd; i++) {
           if (labels[i] == nullptr) continue;
-          if (trySelectHop(positions, count, labels, path_budget, i)) {
+          if (trySelectHop(positions, count, labels, path_budget, hop_count, trailing_ellipsis, i)) {
             fwd = i + 1;
             added = true;
             break;
@@ -551,7 +572,8 @@ static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mes
       } else {
         for (int16_t i = bwd; i >= (int16_t)fwd; i--) {
           if (labels[(uint8_t)i] == nullptr) continue;
-          if (trySelectHop(positions, count, labels, path_budget, (uint8_t)i)) {
+          if (trySelectHop(positions, count, labels, path_budget, hop_count, trailing_ellipsis,
+                           (uint8_t)i)) {
             bwd = (uint8_t)i - 1;
             added = true;
             break;
@@ -569,7 +591,7 @@ static void buildHopPathWithNames(char* body, size_t body_len, MyMesh& mesh, mes
   char path_str[128];
   joinPathFragments(path_str, sizeof(path_str), positions, count, labels, hop_count,
                     trailing_ellipsis);
-  snprintf(body, body_len, "%d %s %s", hop_count, hop_count == 1 ? "hop" : "hops", path_str);
+  snprintf(body, body_len, "%d %s: %s", hop_count, hop_word, path_str);
 }
 
 static bool isBotChannel(const char* channel_name) {

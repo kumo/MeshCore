@@ -71,20 +71,20 @@ Shows path information and warns about configuration issues.
 - Shows full hex path (resolution unreliable with 1-byte)
 - Example:
   ```
-  @[Bob] 3 hops a1→b2→c3
+  @[Bob] 3 hops: a1→b2→c3
   📍 Rasa (VA) 🤖
   ⚠ set 2-byte
   ```
 
 **With 2-byte or 3-byte hashes:**
-- Shows resolved node names where known in contacts: first → ... → last, filling middles in path order as space allows
-- Uses `...` for gaps where nodes aren't in contacts
+- Shows known repeater names only: `→` between adjacent hops, `⇢` when hops are skipped or unknown
+- Format: `N hops: First⇢Last` or `N hops: First→Second⇢Last`
 - Location is omitted (path names use the available budget; use `test`/`prova` for location)
 - Examples:
-  - `@[Bob] 1 hop IT-LIG-Rasa-R 🤖`
-  - `@[Bob] 3 hops FirstHop→...→LastHop 🤖`
-  - `@[Bob] 5 hops FirstHop→...→IT-LIG-Backbone-D→...→LastHop 🤖`
-  - `@[Bob] 5 hops ...→IT-LIG-Backbone-D→...→LastHop 🤖` (first unknown)
+  - `@[Bob] 1 hop: IT-LIG-Rasa-R 🤖`
+  - `@[Bob] 3 hops: FirstHop⇢LastHop 🤖`
+  - `@[Bob] 5 hops: FirstHop→Second⇢IT-LIG-Backbone-D⇢LastHop 🤖`
+  - `@[Bob] 5 hops: ⇢IT-LIG-Backbone-D⇢LastHop 🤖` (unknown hops before first name)
 
 **Warnings:**
 - If sender hasn't set region: Adds `⚠ set region it`
@@ -140,7 +140,7 @@ User: Prova mobile
 Bot: @[Bob] 1 hop via IT-LOM-VA-Rasa-R 📍 Rasa (VA) 🤖
 
 User (in #bot): path
-Bot: @[Charlie] 2 hops IT-LIG-MteBeigua-D→IT-LOM-VA-Rasa-R 🤖
+Bot: @[Charlie] 2 hops: IT-LIG-MteBeigua-D→IT-LOM-VA-Rasa-R 🤖
 
 # With warnings:
 User: test
@@ -151,7 +151,7 @@ Bot (sender no region):
 
 User (in #bot): path
 Bot (1-byte hash, sender no region):
-  @[Eve] 3 hops a1→b2→c3
+  @[Eve] 3 hops: a1→b2→c3
   📍 Rasa (VA) 🤖
   ⚠ set 2-byte & region it
 ```

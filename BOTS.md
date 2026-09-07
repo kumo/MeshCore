@@ -8,10 +8,12 @@ Bot configuration commands work via **Direct Message only** for security.
 
 ### Commands
 
-- `!bot` or `!bot status` - Show bot enabled/disabled state and location
+- `!bot` or `!bot status` - Show bot enabled/disabled state, location, and reply-all setting
 - `!bot on` or `!bot enable` - Enable bot responses
 - `!bot off` or `!bot disable` - Disable bot responses
 - `!bot location <text>` - Set location (e.g., "Rasa (VA)", "Milano : JN45ab")
+- `!bot reply-all on` - Enable bot responses on non-bot channels (Public, etc.)
+- `!bot reply-all off` - Disable bot responses on non-bot channels (default)
 
 State is persisted to `/meshbot` file on device.
 
@@ -23,7 +25,7 @@ Bot responds to commands in these channels:
 - **#ping** - Ping testing channel
 - **#prove** - Italian testing channel
 
-On **other channels** (e.g. Public), only `test` / `prova` get a short casual reply when location is set.
+On **other channels** (e.g. Public), only `test` / `prova` get a short casual reply when `reply-all` is enabled.
 
 ## Channel Commands
 
@@ -55,7 +57,7 @@ Shows hop count and location. "prova" is Italian alternative to "test".
 - With repeater: `@[Bob] 3 hops via IT-LIG-MteBeigua-D 📍 Rasa (VA) 🤖`
 - Without repeater: `@[Bob] 3 hops 📍 Rasa (VA) 🤖`
 
-**In Public (when location is set):**
+**In Public (when reply-all is enabled):**
 - `@[Bob] 3 hops da Rasa (VA) : JN45ju 🤖`
 
 **Warnings:**

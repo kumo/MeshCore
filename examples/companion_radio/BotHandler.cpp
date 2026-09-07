@@ -17,6 +17,7 @@
 static constexpr const char* BOT_STATE_FILE = "/meshbot";
 static bool bot_enabled = false;
 static char bot_location[64] = {0};
+static bool reply_all_channels = false;
 
 void botInit() {
 #ifdef ESP32
@@ -36,7 +37,7 @@ void botInit() {
   size_t len = file.readBytes(buf, sizeof(buf) - 1);
   file.close();
 
-  // Parse line by line: "enabled=0/1" and "location=..."
+  // Parse line by line: "enabled=0/1", "location=...", "reply_all=0/1"
   char* ctx = nullptr;
   char* line = strtok_r(buf, "\n", &ctx);
   while (line != nullptr) {
@@ -45,6 +46,8 @@ void botInit() {
     } else if (strncmp(line, "location=", 9) == 0) {
       strncpy(bot_location, line + 9, sizeof(bot_location) - 1);
       bot_location[sizeof(bot_location) - 1] = '\0';
+    } else if (strncmp(line, "reply_all=", 10) == 0) {
+      reply_all_channels = (line[10] == '1');
     }
     line = strtok_r(nullptr, "\n", &ctx);
   }
@@ -63,6 +66,7 @@ static bool botSaveState() {
 
   file.printf("enabled=%d\n", bot_enabled ? 1 : 0);
   file.printf("location=%s\n", bot_location);
+  file.printf("reply_all=%d\n", reply_all_channels ? 1 : 0);
   file.close();
   return true;
 }
@@ -73,6 +77,10 @@ bool botIsEnabled() {
 
 const char* botGetLocation() {
   return bot_location;
+}
+
+bool botGetReplyAll() {
+  return reply_all_channels;
 }
 
 static const char* getBotWarnings(uint8_t hash_size, bool has_region) {
@@ -97,12 +105,19 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
 
   // Check for !bot commands
   if (strcmp(text, "!bot") == 0 || strcmp(text, "!bot status") == 0) {
+    char status[256];
+    snprintf(status, sizeof(status), "bot: %s", bot_enabled ? "enabled" : "disabled");
+
     if (bot_location[0] != '\0') {
-      snprintf(reply, reply_len, "bot: %s, location: %s",
-               bot_enabled ? "enabled" : "disabled", bot_location);
-    } else {
-      snprintf(reply, reply_len, "bot: %s", bot_enabled ? "enabled" : "disabled");
+      size_t len = strlen(status);
+      snprintf(status + len, sizeof(status) - len, ", location: %s", bot_location);
     }
+
+    size_t len = strlen(status);
+    snprintf(status + len, sizeof(status) - len, ", reply-all: %s",
+             reply_all_channels ? "on" : "off");
+
+    snprintf(reply, reply_len, "%s", status);
     return true;
   }
 
@@ -135,6 +150,26 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
       return true;
     }
     snprintf(reply, reply_len, "OK - location set to: %s", bot_location);
+    return true;
+  }
+
+  if (strcmp(text, "!bot reply-all on") == 0) {
+    reply_all_channels = true;
+    if (!botSaveState()) {
+      snprintf(reply, reply_len, "Error: could not save bot state");
+      return true;
+    }
+    snprintf(reply, reply_len, "OK - reply-all enabled");
+    return true;
+  }
+
+  if (strcmp(text, "!bot reply-all off") == 0) {
+    reply_all_channels = false;
+    if (!botSaveState()) {
+      snprintf(reply, reply_len, "Error: could not save bot state");
+      return true;
+    }
+    snprintf(reply, reply_len, "OK - reply-all disabled");
     return true;
   }
 
@@ -678,10 +713,10 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
   const bool in_bot_channel = isBotChannel(channel_name);
   const char* location = botGetLocation();
 
-  // Public/other channels: casual replies only when location is configured
+  // Public/other channels: casual replies only when reply-all is enabled
   if (!in_bot_channel) {
-    if (location[0] == '\0') {
-      Serial.printf("[BOT] Not a bot channel and no location set, ignoring\n");
+    if (!reply_all_channels) {
+      Serial.printf("[BOT] Not a bot channel and reply-all disabled, ignoring\n");
       return false;
     }
 

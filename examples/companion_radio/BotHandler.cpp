@@ -19,6 +19,19 @@ static bool bot_enabled = false;
 static char bot_location[64] = {0};
 static bool reply_all_channels = false;
 
+// Reply tracking for non-bot channels (prevent spam)
+static constexpr uint8_t MAX_REPLY_TRACKING = 16;
+static constexpr uint32_t REPLY_WINDOW_SEC = 600;  // 10 minutes
+
+struct ReplyState {
+  uint32_t sender_id;
+  uint32_t last_reply_time;
+  uint8_t reply_count;
+};
+
+static ReplyState reply_tracking[MAX_REPLY_TRACKING] = {0};
+static uint8_t reply_tracking_count = 0;
+
 void botInit() {
 #ifdef ESP32
   File file = SPIFFS.open(BOT_STATE_FILE);
@@ -81,6 +94,72 @@ const char* botGetLocation() {
 
 bool botGetReplyAll() {
   return reply_all_channels;
+}
+
+// Get or create reply state for a sender in non-bot channels
+// Returns nullptr if tracking is full and sender not found
+static ReplyState* getReplyState(uint32_t sender_id, uint32_t current_time) {
+  // Check if sender exists and is within time window
+  for (uint8_t i = 0; i < reply_tracking_count; i++) {
+    if (reply_tracking[i].sender_id == sender_id) {
+      // Check if outside time window - reset if so
+      if (current_time - reply_tracking[i].last_reply_time > REPLY_WINDOW_SEC) {
+        reply_tracking[i].last_reply_time = 0;
+        reply_tracking[i].reply_count = 0;
+      }
+      return &reply_tracking[i];
+    }
+  }
+
+  // Not found - add new entry if space available
+  if (reply_tracking_count < MAX_REPLY_TRACKING) {
+    ReplyState* state = &reply_tracking[reply_tracking_count++];
+    state->sender_id = sender_id;
+    state->last_reply_time = 0;
+    state->reply_count = 0;
+    return state;
+  }
+
+  // Tracking full - evict oldest entry
+  ReplyState* oldest = &reply_tracking[0];
+  for (uint8_t i = 1; i < MAX_REPLY_TRACKING; i++) {
+    if (reply_tracking[i].last_reply_time < oldest->last_reply_time) {
+      oldest = &reply_tracking[i];
+    }
+  }
+  oldest->sender_id = sender_id;
+  oldest->last_reply_time = 0;
+  oldest->reply_count = 0;
+  return oldest;
+}
+
+// Check if message is a strict command (just "test"/"prova" alone)
+static bool isStrictTestCommand(const char* cmd) {
+  if (cmd == nullptr) return false;
+
+  // Check for exact "test" or "prova" (case-insensitive, no trailing text)
+  if ((strncasecmp(cmd, "test", 4) == 0 && cmd[4] == '\0') ||
+      (strncasecmp(cmd, "prova", 5) == 0 && cmd[5] == '\0') ||
+      (strncasecmp(cmd, "!test", 5) == 0 && cmd[5] == '\0') ||
+      (strncasecmp(cmd, "!prova", 6) == 0 && cmd[6] == '\0')) {
+    return true;
+  }
+  return false;
+}
+
+static void clearReplyTracking() {
+  reply_tracking_count = 0;
+  memset(reply_tracking, 0, sizeof(reply_tracking));
+}
+
+// Simple hash function for sender names
+static uint32_t hashSenderName(const char* name) {
+  if (name == nullptr) return 0;
+  uint32_t hash = 5381;
+  while (*name) {
+    hash = ((hash << 5) + hash) + (uint8_t)(*name++);  // hash * 33 + c
+  }
+  return hash;
 }
 
 static const char* getBotWarnings(uint8_t hash_size, bool has_region) {
@@ -170,6 +249,12 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
       return true;
     }
     snprintf(reply, reply_len, "OK - reply-all disabled");
+    return true;
+  }
+
+  if (strcmp(text, "!bot clear") == 0) {
+    clearReplyTracking();
+    snprintf(reply, reply_len, "OK - reply tracking cleared");
     return true;
   }
 
@@ -722,16 +807,55 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
 
     if (matchesTestOrProva(cmd)) {
 
-      uint8_t hop_count = pkt->getPathHashCount();
-      char body[128];
-      if (hop_count == 0) {
-        snprintf(body, sizeof(body), "direct, %s", location);
-      } else {
-        snprintf(body, sizeof(body), "%d %s, %s", hop_count,
-                 hop_count == 1 ? "salto" : "salti", location);
+      // Check reply state for this sender
+      uint32_t current_time = mesh.getRTCClock()->getCurrentTime();
+      uint32_t sender_id = hashSenderName(sender_name);
+      ReplyState* state = getReplyState(sender_id, current_time);
+
+      if (state == nullptr) {
+        Serial.printf("[BOT] Reply tracking full, skipping\n");
+        return false;
       }
-      sendCasualReply(mesh, channel, sender_name, body);
-      return true;
+
+      // State machine: 0 = first reply, 1 = second reply (if strict command), 2+ = no reply
+      if (state->reply_count == 0) {
+        // First reply: always respond
+        uint8_t hop_count = pkt->getPathHashCount();
+        char body[128];
+        if (hop_count == 0) {
+          snprintf(body, sizeof(body), "direct, %s", location);
+        } else {
+          snprintf(body, sizeof(body), "%d %s, %s", hop_count,
+                   hop_count == 1 ? "salto" : "salti", location);
+        }
+        sendCasualReply(mesh, channel, sender_name, body);
+        state->reply_count++;
+        state->last_reply_time = current_time;
+        Serial.printf("[BOT] First reply to %s\n", sender_name);
+        return true;
+
+      } else if (state->reply_count == 1 && isStrictTestCommand(cmd)) {
+        // Second reply: only if strict command, include nudge
+        uint8_t hop_count = pkt->getPathHashCount();
+        char body[192];
+        if (hop_count == 0) {
+          snprintf(body, sizeof(body), "direct, %s (usare #bot o #test per fare le prove)", location);
+        } else {
+          snprintf(body, sizeof(body), "%d %s, %s (usare #bot o #test per fare le prove)",
+                   hop_count, hop_count == 1 ? "salto" : "salti", location);
+        }
+        sendCasualReply(mesh, channel, sender_name, body);
+        state->reply_count++;
+        state->last_reply_time = current_time;
+        Serial.printf("[BOT] Second reply to %s with nudge\n", sender_name);
+        return true;
+
+      } else {
+        // Third+ message, or second message but not strict command: no reply
+        Serial.printf("[BOT] Skipping reply to %s (count=%d, strict=%d)\n",
+                     sender_name, state->reply_count, isStrictTestCommand(cmd) ? 1 : 0);
+        return false;
+      }
     }
 
     return false;

@@ -556,6 +556,8 @@ static float calculateDistance(int32_t lat1, int32_t lon1, int32_t lat2, int32_t
 // Calculate total path distance by summing distances between consecutive hops
 // Returns total distance in km, and sets incomplete=true if any GPS data is missing
 static float calculatePathDistance(MyMesh& mesh, mesh::Packet* pkt, bool& incomplete) {
+  static constexpr float MAX_HOP_DISTANCE_KM = 200.0f;  // Sanity check for GPS data
+
   incomplete = false;
   uint8_t hop_count = pkt->getPathHashCount();
   uint8_t hash_size = pkt->getPathHashSize();
@@ -586,9 +588,13 @@ static float calculatePathDistance(MyMesh& mesh, mesh::Packet* pkt, bool& incomp
 
       float dist = calculateDistance(contact1->gps_lat, contact1->gps_lon,
                                     contact2->gps_lat, contact2->gps_lon);
-      if (dist > 0) {
+      if (dist > 0 && dist <= MAX_HOP_DISTANCE_KM) {
         total_distance += dist;
         Serial.printf("[BOT]     Distance: %.1fkm (total: %.1fkm)\n", dist, total_distance);
+      } else if (dist > MAX_HOP_DISTANCE_KM) {
+        incomplete = true;  // Unreasonable distance, likely bad GPS data
+        Serial.printf("[BOT]     Distance %.1fkm exceeds max %dkm - GPS data suspect, skipping\n",
+                     dist, (int)MAX_HOP_DISTANCE_KM);
       } else {
         incomplete = true;  // Missing GPS data
         Serial.printf("[BOT]     Missing GPS data (0,0)\n");

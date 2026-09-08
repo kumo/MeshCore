@@ -226,10 +226,11 @@ static bool isAtHomeRepeater(mesh::Packet* pkt) {
   const uint8_t* last_hop = &pkt->path[(hop_count - 1) * hash_size];
 
   // Compare configured hash with last hop
-  // Only compare up to the configured hash length (1, 2, or 3 bytes)
-  if (home_repeater_hash_len > hash_size) return false;  // Config longer than path hash
+  // Compare only up to the minimum of config length and path hash size
+  // This way "8dbb" matches both 1-byte "8d" and 2-byte "8dbb"
+  uint8_t compare_len = (home_repeater_hash_len < hash_size) ? home_repeater_hash_len : hash_size;
 
-  for (uint8_t i = 0; i < home_repeater_hash_len; i++) {
+  for (uint8_t i = 0; i < compare_len; i++) {
     if (home_repeater_hash[i] != last_hop[i]) return false;
   }
 

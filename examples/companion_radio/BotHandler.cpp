@@ -527,6 +527,67 @@ static void buildHopPath(char* body, size_t body_len, mesh::Packet* pkt) {
   snprintf(body, body_len, "%d %s: %s", hop_count, hop_count == 1 ? "hop" : "hops", path_str);
 }
 
+// Calculate distance between two lat/lon points using haversine formula
+// lat/lon are stored as int32_t with 6 decimal places
+// Returns distance in kilometers
+static float calculateDistance(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2) {
+  // Check for invalid coordinates (0,0)
+  if ((lat1 == 0 && lon1 == 0) || (lat2 == 0 && lon2 == 0)) {
+    return -1.0f;  // Invalid
+  }
+
+  // Convert to radians
+  float lat1_rad = (lat1 / 1000000.0f) * M_PI / 180.0f;
+  float lon1_rad = (lon1 / 1000000.0f) * M_PI / 180.0f;
+  float lat2_rad = (lat2 / 1000000.0f) * M_PI / 180.0f;
+  float lon2_rad = (lon2 / 1000000.0f) * M_PI / 180.0f;
+
+  // Haversine formula
+  float dlat = lat2_rad - lat1_rad;
+  float dlon = lon2_rad - lon1_rad;
+  float a = sin(dlat/2) * sin(dlat/2) +
+            cos(lat1_rad) * cos(lat2_rad) *
+            sin(dlon/2) * sin(dlon/2);
+  float c = 2 * atan2(sqrt(a), sqrt(1-a));
+
+  return 6371.0f * c;  // Earth radius in km
+}
+
+// Calculate total path distance by summing distances between consecutive hops
+// Returns total distance in km, and sets incomplete=true if any GPS data is missing
+static float calculatePathDistance(MyMesh& mesh, mesh::Packet* pkt, bool& incomplete) {
+  incomplete = false;
+  uint8_t hop_count = pkt->getPathHashCount();
+  uint8_t hash_size = pkt->getPathHashSize();
+
+  if (hop_count < 2) return 0.0f;  // Need at least 2 hops to calculate distance
+
+  float total_distance = 0.0f;
+
+  // Walk through consecutive hop pairs
+  for (uint8_t i = 0; i < hop_count - 1; i++) {
+    const uint8_t* hash1 = &pkt->path[i * hash_size];
+    const uint8_t* hash2 = &pkt->path[(i + 1) * hash_size];
+
+    ContactInfo* contact1 = mesh.lookupContactByPubKey(hash1, hash_size);
+    ContactInfo* contact2 = mesh.lookupContactByPubKey(hash2, hash_size);
+
+    if (contact1 && contact2) {
+      float dist = calculateDistance(contact1->gps_lat, contact1->gps_lon,
+                                    contact2->gps_lat, contact2->gps_lon);
+      if (dist > 0) {
+        total_distance += dist;
+      } else {
+        incomplete = true;  // Missing GPS data
+      }
+    } else {
+      incomplete = true;  // Contact not in list
+    }
+  }
+
+  return total_distance;
+}
+
 static void buildHopSummary(char* body, size_t body_len, MyMesh& mesh, mesh::Packet* pkt) {
   uint8_t hop_count = pkt->getPathHashCount();
 
@@ -535,11 +596,29 @@ static void buildHopSummary(char* body, size_t body_len, MyMesh& mesh, mesh::Pac
     return;
   }
 
+  // Calculate path distance if available
+  bool incomplete = false;
+  float distance = calculatePathDistance(mesh, pkt, incomplete);
+
   const char* repeater = findBestRepeater(mesh, pkt);
+
+  // Format: "N hops via Repeater (45km)" or "N hops via Repeater (~45km)"
   if (repeater) {
-    snprintf(body, body_len, "%d %s via %s", hop_count, hop_count == 1 ? "hop" : "hops", repeater);
+    if (distance > 0) {
+      snprintf(body, body_len, "%d %s via %s (%s%.0fkm)",
+               hop_count, hop_count == 1 ? "hop" : "hops", repeater,
+               incomplete ? "~" : "", distance);
+    } else {
+      snprintf(body, body_len, "%d %s via %s", hop_count, hop_count == 1 ? "hop" : "hops", repeater);
+    }
   } else {
-    snprintf(body, body_len, "%d %s", hop_count, hop_count == 1 ? "hop" : "hops");
+    if (distance > 0) {
+      snprintf(body, body_len, "%d %s (%s%.0fkm)",
+               hop_count, hop_count == 1 ? "hop" : "hops",
+               incomplete ? "~" : "", distance);
+    } else {
+      snprintf(body, body_len, "%d %s", hop_count, hop_count == 1 ? "hop" : "hops");
+    }
   }
 }
 

@@ -8,14 +8,19 @@ Bot configuration commands work via **Direct Message only** for security.
 
 ### Commands
 
-- `!bot` or `!bot status` - Show bot enabled/disabled state, location, and reply-all setting
+- `!bot` or `!bot status` - Show bot enabled/disabled state, location, reply-all, and home repeater setting
 - `!bot on` or `!bot enable` - Enable bot responses
 - `!bot off` or `!bot disable` - Disable bot responses
 - `!bot location <text>` - Set location (e.g., "Rasa (VA)", "Milano : JN45ab")
 - `!bot reply-all on` - Enable bot responses on non-bot channels (Public, etc.)
 - `!bot reply-all off` - Disable bot responses on non-bot channels (default)
+- `!bot home <hash>` - Set home repeater hash (1-3 bytes hex, e.g., "8d" or "8dbb")
+- `!bot home clear` - Clear home repeater setting (reply everywhere)
+- `!bot clear` - Clear reply tracking state (resets spam prevention)
 
 State is persisted to `/meshbot` file on device.
+
+**Home Repeater:** When configured, the bot will not send replies when the last hop matches the home repeater. This prevents the bot from replying to local messages when at home. The hash comparison uses the minimum of configured and path hash lengths, so "8dbb" will match both 1-byte (8d) and 2-byte (8dbb) paths.
 
 ## Active Channels
 
@@ -25,7 +30,11 @@ Bot responds to commands in these channels:
 - **#ping** - Ping testing channel
 - **#prove** - Italian testing channel
 
-On **other channels** (e.g. Public), only `test` / `prova` get a short casual reply when `reply-all` is enabled.
+On **other channels** (e.g. Public), only `test` / `prova` get a short casual reply when `reply-all` is enabled. Rate limiting prevents spam:
+- First message: Always replies
+- Second strict command ("test"/"prova" alone): Replies with gentle nudge to use bot channels
+- Subsequent messages: No reply
+- State resets after 10 minutes
 
 ## Channel Commands
 
@@ -58,7 +67,8 @@ Shows hop count and location. "prova" is Italian alternative to "test".
 - Without repeater: `@[Bob] 3 hops 📍 Rasa (VA) 🤖`
 
 **In Public (when reply-all is enabled):**
-- `@[Bob] 3 hops da Rasa (VA) : JN45ju 🤖`
+- First reply: `@[Bob] 3 salti, Rasa (VA) 🤖`
+- Second strict command: `@[Bob] 3 salti, Rasa (VA) (usare #bot o #test per fare le prove) 🤖`
 
 **Warnings:**
 - If sender hasn't set region: Adds `⚠ set region it`
@@ -129,6 +139,18 @@ All bot responses follow this pattern:
 
 The pin emoji (📍) keeps the format language-neutral while clearly indicating the destination.
 
+## Reply Rate Limiting (Non-Bot Channels)
+
+When `reply-all` is enabled, the bot uses smart rate limiting to welcome new users without spamming regulars:
+
+1. **First contact** - Bot replies to any message starting with "test"/"prova" (even "prova prima di pranzo")
+2. **Second strict command** - If sender sends just "test" or "prova" again within 10 minutes, bot replies with nudge to use #bot/#test channels
+3. **Conversational messages** - If second message has text after "test"/"prova", bot stays silent (assumes conversation, not testing)
+4. **Further messages** - Bot stays silent for remaining messages in 10-minute window
+5. **Reset** - After 10 minutes, tracking resets and bot will reply again
+
+This balances welcoming newcomers (who often test in Public) with reducing noise for active users. Use `!bot clear` to manually reset tracking if needed.
+
 ## Examples
 
 ```
@@ -156,4 +178,17 @@ Bot (1-byte hash, sender no region):
   @[Eve] 3 hops: a1→b2→c3
   📍 Rasa (VA) 🤖
   ⚠ set 2-byte & region it
+
+# In Public channel (reply-all enabled):
+User: prova prima di uscire
+Bot: @[Alice] 3 salti, Rasa (VA) 🤖
+
+User (same person, <10 min later): test
+Bot: @[Alice] 3 salti, Rasa (VA) (usare #bot o #test per fare le prove) 🤖
+
+User (same person, <10 min later): test again
+Bot: (no reply - limit reached)
+
+User (same person, >10 min later): prova
+Bot: @[Alice] 2 salti, Rasa (VA) 🤖
 ```

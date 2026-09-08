@@ -728,7 +728,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
         snprintf(body, sizeof(body), "direct, %s", location);
       } else {
         snprintf(body, sizeof(body), "%d %s, %s", hop_count,
-                 hop_count == 1 ? "hop" : "hops", location);
+                 hop_count == 1 ? "salto" : "salti", location);
       }
       sendCasualReply(mesh, channel, sender_name, body);
       return true;

@@ -61,10 +61,14 @@ Shows hop count and location. "prova" is Italian alternative to "test".
 - With hops: `@[Bob] 3 hops a1b2→c3d4 📍 Rasa (VA) 🤖`
 
 **In other channels (#test, #ping, #prove):**
-- Shows simplified format with best repeater
+- Shows simplified format with best repeater and path distance
 - Direct: `@[Bob] direct 📍 Rasa (VA) 🤖`
-- With repeater: `@[Bob] 3 hops via IT-LIG-MteBeigua-D 📍 Rasa (VA) 🤖`
-- Without repeater: `@[Bob] 3 hops 📍 Rasa (VA) 🤖`
+- With repeater: `@[Bob] 3 hops via IT-LIG-MteBeigua-D (45km) 📍 Rasa (VA) 🤖`
+- Incomplete GPS data: `@[Bob] 3 hops via IT-LIG-MteBeigua-D (~45km) 📍 Rasa (VA) 🤖`
+- Without repeater: `@[Bob] 3 hops (78km) 📍 Rasa (VA) 🤖`
+- No GPS data: `@[Bob] 3 hops 📍 Rasa (VA) 🤖`
+
+**Path Distance:** Total distance calculated by summing distances between consecutive hops using GPS coordinates from contacts. Shows "45km" when all data available, "~45km" (approximately) when some repeaters lack GPS data.
 
 **In Public (when reply-all is enabled):**
 - First reply: `@[Bob] 3 salti, Rasa (VA) 🤖`
@@ -158,10 +162,10 @@ User: ping
 Bot: @[Alice] ⌢ ⌢ ⌢ 🏓 pong! 🤖
 
 User: Test dalla Valceresio
-Bot: @[Alice] 3 hops via IT-LIG-MteBeigua-D 📍 Rasa (VA) 🤖
+Bot: @[Alice] 3 hops via IT-LIG-MteBeigua-D (45km) 📍 Rasa (VA) 🤖
 
 User: Prova mobile
-Bot: @[Bob] 1 hop via IT-LOM-VA-Rasa-R 📍 Rasa (VA) 🤖
+Bot: @[Bob] 1 hop via IT-LOM-VA-Rasa-R (12km) 📍 Rasa (VA) 🤖
 
 User (in #bot): path
 Bot: @[Charlie] 2 hops: IT-LIG-MteBeigua-D→IT-LOM-VA-Rasa-R 🤖

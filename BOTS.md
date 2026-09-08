@@ -68,7 +68,7 @@ Shows hop count and location. "prova" is Italian alternative to "test".
 
 **In Public (when reply-all is enabled):**
 - First reply: `@[Bob] 3 salti, Rasa (VA) 🤖`
-- Second strict command: `@[Bob] 3 salti, Rasa (VA) (usare #bot o #test per fare le prove) 🤖`
+- Second strict command: `@[Bob] 3 salti, Rasa (VA) (scrivi in #bot o #test) 🤖`
 
 **Warnings:**
 - If sender hasn't set region: Adds `⚠ set region it`
@@ -184,7 +184,7 @@ User: prova prima di uscire
 Bot: @[Alice] 3 salti, Rasa (VA) 🤖
 
 User (same person, <10 min later): test
-Bot: @[Alice] 3 salti, Rasa (VA) (usare #bot o #test per fare le prove) 🤖
+Bot: @[Alice] 3 salti, Rasa (VA) (scrivi in #bot o #test) 🤖
 
 User (same person, <10 min later): test again
 Bot: (no reply - limit reached)

@@ -725,9 +725,9 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       uint8_t hop_count = pkt->getPathHashCount();
       char body[128];
       if (hop_count == 0) {
-        snprintf(body, sizeof(body), "direct da %s", location);
+        snprintf(body, sizeof(body), "direct, %s", location);
       } else {
-        snprintf(body, sizeof(body), "%d %s da %s", hop_count,
+        snprintf(body, sizeof(body), "%d %s, %s", hop_count,
                  hop_count == 1 ? "hop" : "hops", location);
       }
       sendCasualReply(mesh, channel, sender_name, body);

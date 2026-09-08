@@ -567,41 +567,48 @@ static float calculatePathDistance(MyMesh& mesh, mesh::Packet* pkt, bool& incomp
   Serial.printf("[BOT] Calculating path distance for %d hops:\n", hop_count);
   float total_distance = 0.0f;
 
-  // Walk through consecutive hop pairs
-  for (uint8_t i = 0; i < hop_count - 1; i++) {
-    const uint8_t* hash1 = &pkt->path[i * hash_size];
-    const uint8_t* hash2 = &pkt->path[(i + 1) * hash_size];
+  // Find first known contact with valid GPS as starting point
+  ContactInfo* last_known = nullptr;
+  int8_t last_known_idx = -1;
 
-    // Print hashes for debugging
-    Serial.printf("[BOT]   Hop %d->%d: ", i, i+1);
-    for (uint8_t j = 0; j < hash_size; j++) Serial.printf("%02x", hash1[j]);
-    Serial.printf(" -> ");
-    for (uint8_t j = 0; j < hash_size; j++) Serial.printf("%02x", hash2[j]);
+  for (uint8_t i = 0; i < hop_count; i++) {
+    const uint8_t* hash = &pkt->path[i * hash_size];
+    ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
 
-    ContactInfo* contact1 = mesh.lookupContactByPubKey(hash1, hash_size);
-    ContactInfo* contact2 = mesh.lookupContactByPubKey(hash2, hash_size);
+    if (contact && !(contact->gps_lat == 0 && contact->gps_lon == 0)) {
+      if (last_known) {
+        // We have two known points - calculate distance between them
+        Serial.printf("[BOT]   Hop %d->%d: ", last_known_idx, i);
 
-    if (contact1 && contact2) {
-      Serial.printf("\n[BOT]     %s (%.6f, %.6f) -> %s (%.6f, %.6f)\n",
-                   contact1->name, contact1->gps_lat/1000000.0, contact1->gps_lon/1000000.0,
-                   contact2->name, contact2->gps_lat/1000000.0, contact2->gps_lon/1000000.0);
+        float dist = calculateDistance(last_known->gps_lat, last_known->gps_lon,
+                                      contact->gps_lat, contact->gps_lon);
 
-      float dist = calculateDistance(contact1->gps_lat, contact1->gps_lon,
-                                    contact2->gps_lat, contact2->gps_lon);
-      if (dist > 0 && dist <= MAX_HOP_DISTANCE_KM) {
-        total_distance += dist;
-        Serial.printf("[BOT]     Distance: %.1fkm (total: %.1fkm)\n", dist, total_distance);
-      } else if (dist > MAX_HOP_DISTANCE_KM) {
-        incomplete = true;  // Unreasonable distance, likely bad GPS data
-        Serial.printf("[BOT]     Distance %.1fkm exceeds max %dkm - GPS data suspect, skipping\n",
-                     dist, (int)MAX_HOP_DISTANCE_KM);
-      } else {
-        incomplete = true;  // Missing GPS data
-        Serial.printf("[BOT]     Missing GPS data (0,0)\n");
+        Serial.printf("%s (%.6f, %.6f) -> %s (%.6f, %.6f)\n",
+                     last_known->name, last_known->gps_lat/1000000.0, last_known->gps_lon/1000000.0,
+                     contact->name, contact->gps_lat/1000000.0, contact->gps_lon/1000000.0);
+
+        if (i > last_known_idx + 1) {
+          Serial.printf("[BOT]     (skipped %d unknown hop%s)\n",
+                       i - last_known_idx - 1,
+                       (i - last_known_idx - 1) == 1 ? "" : "s");
+          incomplete = true;
+        }
+
+        if (dist > 0 && dist <= MAX_HOP_DISTANCE_KM) {
+          total_distance += dist;
+          Serial.printf("[BOT]     Distance: %.1fkm (total: %.1fkm)\n", dist, total_distance);
+        } else if (dist > MAX_HOP_DISTANCE_KM) {
+          incomplete = true;  // Unreasonable distance, likely bad GPS data
+          Serial.printf("[BOT]     Distance %.1fkm exceeds max %dkm - GPS data suspect, skipping\n",
+                       dist, (int)MAX_HOP_DISTANCE_KM);
+        } else {
+          incomplete = true;  // Missing GPS data
+          Serial.printf("[BOT]     Missing GPS data (0,0)\n");
+        }
       }
-    } else {
-      incomplete = true;  // Contact not in list
-      Serial.printf(" -> NOT FOUND\n");
+
+      last_known = contact;
+      last_known_idx = i;
     }
   }
 

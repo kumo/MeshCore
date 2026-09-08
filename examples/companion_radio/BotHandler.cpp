@@ -576,6 +576,12 @@ static float calculatePathDistance(MyMesh& mesh, mesh::Packet* pkt, bool& incomp
     ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
 
     if (contact && !(contact->gps_lat == 0 && contact->gps_lon == 0)) {
+      // If this is the first known hop and it's not at the start, mark incomplete
+      if (!last_known && i > 0) {
+        Serial.printf("[BOT]   (skipped %d unknown hop%s at start)\n", i, i == 1 ? "" : "s");
+        incomplete = true;
+      }
+
       if (last_known) {
         // We have two known points - calculate distance between them
         Serial.printf("[BOT]   Hop %d->%d: ", last_known_idx, i);
@@ -610,6 +616,14 @@ static float calculatePathDistance(MyMesh& mesh, mesh::Packet* pkt, bool& incomp
       last_known = contact;
       last_known_idx = i;
     }
+  }
+
+  // Check for unknown hops at the end
+  if (last_known_idx >= 0 && last_known_idx < hop_count - 1) {
+    uint8_t trailing_unknown = hop_count - 1 - last_known_idx;
+    Serial.printf("[BOT]   (skipped %d unknown hop%s at end)\n",
+                 trailing_unknown, trailing_unknown == 1 ? "" : "s");
+    incomplete = true;
   }
 
   Serial.printf("[BOT] Total path distance: %.1fkm%s\n", total_distance, incomplete ? " (incomplete)" : "");

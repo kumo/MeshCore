@@ -18,6 +18,8 @@ static constexpr const char* BOT_STATE_FILE = "/meshbot";
 static bool bot_enabled = false;
 static char bot_location[64] = {0};
 static bool reply_all_channels = false;
+static uint8_t home_repeater_hash[3] = {0};
+static uint8_t home_repeater_hash_len = 0;
 
 // Reply tracking for non-bot channels (prevent spam)
 static constexpr uint8_t MAX_REPLY_TRACKING = 16;
@@ -31,6 +33,46 @@ struct ReplyState {
 
 static ReplyState reply_tracking[MAX_REPLY_TRACKING] = {0};
 static uint8_t reply_tracking_count = 0;
+
+// Convert hex char to value (0-15), returns 255 on error
+static uint8_t hexCharToValue(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return 255;
+}
+
+// Parse hex string to bytes (e.g. "8dbb" -> {0x8d, 0xbb})
+// Returns number of bytes parsed, 0 on error
+static uint8_t parseHexString(const char* hex_str, uint8_t* dest, uint8_t max_len) {
+  if (hex_str == nullptr || dest == nullptr) return 0;
+
+  uint8_t len = 0;
+  while (*hex_str && len < max_len) {
+    uint8_t high = hexCharToValue(*hex_str++);
+    if (high == 255) return 0;
+
+    if (*hex_str == '\0') return 0;  // Odd number of chars
+    uint8_t low = hexCharToValue(*hex_str++);
+    if (low == 255) return 0;
+
+    dest[len++] = (high << 4) | low;
+  }
+
+  return len;
+}
+
+// Convert bytes to hex string (e.g. {0x8d, 0xbb} -> "8dbb")
+static void bytesToHexString(const uint8_t* bytes, uint8_t len, char* dest, size_t dest_len) {
+  if (bytes == nullptr || dest == nullptr || dest_len == 0) return;
+
+  size_t pos = 0;
+  for (uint8_t i = 0; i < len && pos + 2 < dest_len; i++) {
+    snprintf(dest + pos, dest_len - pos, "%02x", bytes[i]);
+    pos += 2;
+  }
+  dest[pos] = '\0';
+}
 
 void botInit() {
 #ifdef ESP32
@@ -50,7 +92,7 @@ void botInit() {
   size_t len = file.readBytes(buf, sizeof(buf) - 1);
   file.close();
 
-  // Parse line by line: "enabled=0/1", "location=...", "reply_all=0/1"
+  // Parse line by line: "enabled=0/1", "location=...", "reply_all=0/1", "home=..."
   char* ctx = nullptr;
   char* line = strtok_r(buf, "\n", &ctx);
   while (line != nullptr) {
@@ -61,6 +103,8 @@ void botInit() {
       bot_location[sizeof(bot_location) - 1] = '\0';
     } else if (strncmp(line, "reply_all=", 10) == 0) {
       reply_all_channels = (line[10] == '1');
+    } else if (strncmp(line, "home=", 5) == 0) {
+      home_repeater_hash_len = parseHexString(line + 5, home_repeater_hash, sizeof(home_repeater_hash));
     }
     line = strtok_r(nullptr, "\n", &ctx);
   }
@@ -80,6 +124,13 @@ static bool botSaveState() {
   file.printf("enabled=%d\n", bot_enabled ? 1 : 0);
   file.printf("location=%s\n", bot_location);
   file.printf("reply_all=%d\n", reply_all_channels ? 1 : 0);
+
+  if (home_repeater_hash_len > 0) {
+    char hex_str[8];
+    bytesToHexString(home_repeater_hash, home_repeater_hash_len, hex_str, sizeof(hex_str));
+    file.printf("home=%s\n", hex_str);
+  }
+
   file.close();
   return true;
 }
@@ -162,6 +213,29 @@ static uint32_t hashSenderName(const char* name) {
   return hash;
 }
 
+// Check if last hop in path matches configured home repeater
+// Returns true if at home, false otherwise
+static bool isAtHomeRepeater(mesh::Packet* pkt) {
+  // Not configured - never at home
+  if (home_repeater_hash_len == 0) return false;
+
+  uint8_t hop_count = pkt->getPathHashCount();
+  if (hop_count == 0) return false;  // Direct connection, not via repeater
+
+  uint8_t hash_size = pkt->getPathHashSize();
+  const uint8_t* last_hop = &pkt->path[(hop_count - 1) * hash_size];
+
+  // Compare configured hash with last hop
+  // Only compare up to the configured hash length (1, 2, or 3 bytes)
+  if (home_repeater_hash_len > hash_size) return false;  // Config longer than path hash
+
+  for (uint8_t i = 0; i < home_repeater_hash_len; i++) {
+    if (home_repeater_hash[i] != last_hop[i]) return false;
+  }
+
+  return true;
+}
+
 static const char* getBotWarnings(uint8_t hash_size, bool has_region) {
   bool needs_bytes_warning = (hash_size == 1);
   bool needs_region_warning = !has_region;
@@ -195,6 +269,13 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
     size_t len = strlen(status);
     snprintf(status + len, sizeof(status) - len, ", reply-all: %s",
              reply_all_channels ? "on" : "off");
+
+    if (home_repeater_hash_len > 0) {
+      char hex_str[8];
+      bytesToHexString(home_repeater_hash, home_repeater_hash_len, hex_str, sizeof(hex_str));
+      len = strlen(status);
+      snprintf(status + len, sizeof(status) - len, ", home: %s", hex_str);
+    }
 
     snprintf(reply, reply_len, "%s", status);
     return true;
@@ -249,6 +330,43 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
       return true;
     }
     snprintf(reply, reply_len, "OK - reply-all disabled");
+    return true;
+  }
+
+  if (strncmp(text, "!bot home ", 10) == 0) {
+    const char* hash_str = text + 10;
+    uint8_t new_hash[3];
+    uint8_t new_len = parseHexString(hash_str, new_hash, sizeof(new_hash));
+
+    if (new_len == 0 || new_len > 3) {
+      snprintf(reply, reply_len, "Error: invalid hex string (use 1-3 bytes, e.g. '8dbb')");
+      return true;
+    }
+
+    memcpy(home_repeater_hash, new_hash, new_len);
+    home_repeater_hash_len = new_len;
+
+    if (!botSaveState()) {
+      snprintf(reply, reply_len, "Error: could not save bot state");
+      return true;
+    }
+
+    char hex_str[8];
+    bytesToHexString(home_repeater_hash, home_repeater_hash_len, hex_str, sizeof(hex_str));
+    snprintf(reply, reply_len, "OK - home repeater set to: %s", hex_str);
+    return true;
+  }
+
+  if (strcmp(text, "!bot home clear") == 0) {
+    home_repeater_hash_len = 0;
+    memset(home_repeater_hash, 0, sizeof(home_repeater_hash));
+
+    if (!botSaveState()) {
+      snprintf(reply, reply_len, "Error: could not save bot state");
+      return true;
+    }
+
+    snprintf(reply, reply_len, "OK - home repeater cleared");
     return true;
   }
 
@@ -806,6 +924,11 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
     }
 
     if (matchesTestOrProva(cmd)) {
+      // Skip reply if at home repeater
+      if (isAtHomeRepeater(pkt)) {
+        Serial.printf("[BOT] At home repeater, skipping reply\n");
+        return false;
+      }
 
       // Check reply state for this sender
       uint32_t current_time = mesh.getRTCClock()->getCurrentTime();
@@ -858,6 +981,12 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       }
     }
 
+    return false;
+  }
+
+  // Bot channels - skip all replies if at home repeater
+  if (isAtHomeRepeater(pkt)) {
+    Serial.printf("[BOT] At home repeater, skipping reply\n");
     return false;
   }
 

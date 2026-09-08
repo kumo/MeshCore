@@ -887,6 +887,12 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
     return false;
   }
 
+  // Check if bot is enabled
+  if (!botIsEnabled()) {
+    Serial.printf("[BOT] Bot disabled, ignoring channel message\n");
+    return false;
+  }
+
   Serial.printf("[BOT] Channel: %s, Text: %s\n", channel_name, text);
 
   // Extract sender name and message from "SenderName: message" format

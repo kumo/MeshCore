@@ -562,6 +562,7 @@ static float calculatePathDistance(MyMesh& mesh, mesh::Packet* pkt, bool& incomp
 
   if (hop_count < 2) return 0.0f;  // Need at least 2 hops to calculate distance
 
+  Serial.printf("[BOT] Calculating path distance for %d hops:\n", hop_count);
   float total_distance = 0.0f;
 
   // Walk through consecutive hop pairs
@@ -569,22 +570,36 @@ static float calculatePathDistance(MyMesh& mesh, mesh::Packet* pkt, bool& incomp
     const uint8_t* hash1 = &pkt->path[i * hash_size];
     const uint8_t* hash2 = &pkt->path[(i + 1) * hash_size];
 
+    // Print hashes for debugging
+    Serial.printf("[BOT]   Hop %d->%d: ", i, i+1);
+    for (uint8_t j = 0; j < hash_size; j++) Serial.printf("%02x", hash1[j]);
+    Serial.printf(" -> ");
+    for (uint8_t j = 0; j < hash_size; j++) Serial.printf("%02x", hash2[j]);
+
     ContactInfo* contact1 = mesh.lookupContactByPubKey(hash1, hash_size);
     ContactInfo* contact2 = mesh.lookupContactByPubKey(hash2, hash_size);
 
     if (contact1 && contact2) {
+      Serial.printf("\n[BOT]     %s (%.6f, %.6f) -> %s (%.6f, %.6f)\n",
+                   contact1->name, contact1->gps_lat/1000000.0, contact1->gps_lon/1000000.0,
+                   contact2->name, contact2->gps_lat/1000000.0, contact2->gps_lon/1000000.0);
+
       float dist = calculateDistance(contact1->gps_lat, contact1->gps_lon,
                                     contact2->gps_lat, contact2->gps_lon);
       if (dist > 0) {
         total_distance += dist;
+        Serial.printf("[BOT]     Distance: %.1fkm (total: %.1fkm)\n", dist, total_distance);
       } else {
         incomplete = true;  // Missing GPS data
+        Serial.printf("[BOT]     Missing GPS data (0,0)\n");
       }
     } else {
       incomplete = true;  // Contact not in list
+      Serial.printf(" -> NOT FOUND\n");
     }
   }
 
+  Serial.printf("[BOT] Total path distance: %.1fkm%s\n", total_distance, incomplete ? " (incomplete)" : "");
   return total_distance;
 }
 

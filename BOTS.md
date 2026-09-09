@@ -66,9 +66,9 @@ Shows hop count and location. "prova" is Italian alternative to "test".
 - With repeater: `@[Bob] 3 hops via IT-LIG-MteBeigua-D (45km) 📍 Rasa (VA) 🤖`
 - Incomplete GPS data: `@[Bob] 3 hops via IT-LIG-MteBeigua-D (~45km) 📍 Rasa (VA) 🤖`
 - Without repeater: `@[Bob] 3 hops (78km) 📍 Rasa (VA) 🤖`
-- No GPS data: `@[Bob] 3 hops 📍 Rasa (VA) 🤖`
+- No GPS data or 1-byte hashes: `@[Bob] 3 hops 📍 Rasa (VA) 🤖`
 
-**Path Distance:** Total distance calculated by summing distances between consecutive hops using GPS coordinates from contacts. Shows "45km" when all data available, "~45km" (approximately) when some repeaters lack GPS data.
+**Path Distance:** Total distance calculated by summing distances between consecutive hops using GPS coordinates from contacts. Shows "45km" when all data available, "~45km" (approximately) when some repeaters lack GPS data. With 1-byte hashes, distance is not shown because repeater resolution is unreliable.
 
 **In Public (when reply-all is enabled):**
 - First reply: `@[Bob] 3 salti, Rasa (VA) 🤖`

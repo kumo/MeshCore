@@ -1161,6 +1161,14 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
     char body[128];
     if (strcmp(channel_name, "#bot") == 0) {
       buildHopPath(body, sizeof(body), pkt);
+    } else if (hash_size == 1) {
+      // 1-byte hashes: unreliable resolution, just show hop count
+      uint8_t hop_count = pkt->getPathHashCount();
+      if (hop_count == 0) {
+        snprintf(body, sizeof(body), "direct");
+      } else {
+        snprintf(body, sizeof(body), "%d %s", hop_count, hop_count == 1 ? "hop" : "hops");
+      }
     } else {
       buildHopSummary(body, sizeof(body), mesh, pkt);
     }

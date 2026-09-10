@@ -555,10 +555,12 @@ static float calculateDistance(int32_t lat1, int32_t lon1, int32_t lat2, int32_t
 
 // Calculate total path distance by summing distances between consecutive hops
 // Returns total distance in km, and sets incomplete=true if any GPS data is missing
-static float calculatePathDistance(MyMesh& mesh, mesh::Packet* pkt, bool& incomplete) {
+// Sets gps_hop_count to number of hops with valid GPS data
+static float calculatePathDistance(MyMesh& mesh, mesh::Packet* pkt, bool& incomplete, uint8_t& gps_hop_count) {
   static constexpr float MAX_HOP_DISTANCE_KM = 200.0f;  // Sanity check for GPS data
 
   incomplete = false;
+  gps_hop_count = 0;
   uint8_t hop_count = pkt->getPathHashCount();
   uint8_t hash_size = pkt->getPathHashSize();
 
@@ -576,6 +578,7 @@ static float calculatePathDistance(MyMesh& mesh, mesh::Packet* pkt, bool& incomp
     ContactInfo* contact = mesh.lookupContactByPubKey(hash, hash_size);
 
     if (contact && !(contact->gps_lat == 0 && contact->gps_lon == 0)) {
+      gps_hop_count++;
       // If this is the first known hop and it's not at the start, mark incomplete
       if (!last_known && i > 0) {
         Serial.printf("[BOT]   (skipped %d unknown hop%s at start)\n", i, i == 1 ? "" : "s");
@@ -626,11 +629,14 @@ static float calculatePathDistance(MyMesh& mesh, mesh::Packet* pkt, bool& incomp
     incomplete = true;
   }
 
-  Serial.printf("[BOT] Total path distance: %.1fkm%s\n", total_distance, incomplete ? " (incomplete)" : "");
+  Serial.printf("[BOT] Total path distance: %.1fkm%s (%d/%d hops with GPS)\n",
+                total_distance, incomplete ? " (incomplete)" : "", gps_hop_count, hop_count);
   return total_distance;
 }
 
 static void buildHopSummary(char* body, size_t body_len, MyMesh& mesh, mesh::Packet* pkt) {
+  static constexpr uint8_t MIN_GPS_PERCENTAGE = 40;  // Minimum % of hops with GPS to show distance
+
   uint8_t hop_count = pkt->getPathHashCount();
 
   if (hop_count == 0) {
@@ -640,13 +646,24 @@ static void buildHopSummary(char* body, size_t body_len, MyMesh& mesh, mesh::Pac
 
   // Calculate path distance if available
   bool incomplete = false;
-  float distance = calculatePathDistance(mesh, pkt, incomplete);
+  uint8_t gps_hop_count = 0;
+  float distance = calculatePathDistance(mesh, pkt, incomplete, gps_hop_count);
+
+  // Only show distance if we have GPS data for enough hops
+  bool show_distance = false;
+  if (distance > 0 && hop_count > 0) {
+    uint8_t gps_percentage = (gps_hop_count * 100) / hop_count;
+    show_distance = (gps_percentage >= MIN_GPS_PERCENTAGE);
+    Serial.printf("[BOT] GPS coverage: %d%% (%d/%d hops) - %s distance\n",
+                  gps_percentage, gps_hop_count, hop_count,
+                  show_distance ? "showing" : "hiding");
+  }
 
   const char* repeater = findBestRepeater(mesh, pkt);
 
   // Format: "N hops via Repeater (45km)" or "N hops via Repeater (~45km)"
   if (repeater) {
-    if (distance > 0) {
+    if (show_distance) {
       snprintf(body, body_len, "%d %s via %s (%s%.0fkm)",
                hop_count, hop_count == 1 ? "hop" : "hops", repeater,
                incomplete ? "~" : "", distance);
@@ -654,7 +671,7 @@ static void buildHopSummary(char* body, size_t body_len, MyMesh& mesh, mesh::Pac
       snprintf(body, body_len, "%d %s via %s", hop_count, hop_count == 1 ? "hop" : "hops", repeater);
     }
   } else {
-    if (distance > 0) {
+    if (show_distance) {
       snprintf(body, body_len, "%d %s (%s%.0fkm)",
                hop_count, hop_count == 1 ? "hop" : "hops",
                incomplete ? "~" : "", distance);

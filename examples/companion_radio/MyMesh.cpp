@@ -578,9 +578,7 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
     uint8_t channel_idx = findChannelIdx(channel);
     ChannelDetails channel_details;
     if (getChannel(channel_idx, channel_details)) {
-      if (botHandleChannel(*this, channel_details.name, const_cast<mesh::GroupChannel&>(channel), pkt, text)) {
-        return;  // Bot handled it, don't queue to companion app
-      }
+      botHandleChannel(*this, channel_details.name, const_cast<mesh::GroupChannel&>(channel), pkt, text);
     }
   }
 

@@ -1,6 +1,7 @@
 #include "UITask.h"
 #include <helpers/TxtDataHelpers.h>
 #include "../MyMesh.h"
+#include "../BotHandler.h"
 #include "target.h"
 #ifdef WIFI_SSID
   #include <WiFi.h>
@@ -97,6 +98,7 @@ class HomeScreen : public UIScreen {
 #if UI_SENSORS_PAGE == 1
     SENSORS,
 #endif
+    BOT,
     SHUTDOWN,
     Count    // keep as last
   };
@@ -421,6 +423,41 @@ public:
       if (sensors_scroll) sensors_scroll_offset = (sensors_scroll_offset+1)%sensors_nb;
       else sensors_scroll_offset = 0;
 #endif
+    } else if (_page == HomePage::BOT) {
+      bool bot_state = _task->getBotState();
+      char buf[64];
+      int y = 18;
+
+      strcpy(buf, bot_state ? "bot on" : "bot off");
+      display.setColor(UIColor::primary_txt);
+      display.drawTextLeftAlign(0, y, buf);
+
+      const char* location = botGetLocation();
+      if (location != NULL && location[0] != '\0') {
+        y = y + 12;
+        display.setColor(UIColor::secondary_txt);
+        display.drawTextLeftAlign(0, y, "location");
+        y = y + 12;
+        display.setColor(UIColor::primary_txt);
+        display.drawTextLeftAlign(0, y, location);
+      }
+
+      y = y + 12;
+      display.setColor(UIColor::secondary_txt);
+      display.drawTextLeftAlign(0, y, "reply all");
+      display.setColor(UIColor::primary_txt);
+      strcpy(buf, botGetReplyAll() ? "yes" : "no");
+      display.drawTextRightAlign(display.width()-1, y, buf);
+
+      y = y + 12;
+      display.setColor(UIColor::secondary_txt);
+      display.drawTextLeftAlign(0, y, "warnings");
+      display.setColor(UIColor::primary_txt);
+      strcpy(buf, botGetWarningsEnabled() ? "yes" : "no");
+      display.drawTextRightAlign(display.width()-1, y, buf);
+
+      display.setColor(UIColor::secondary_txt);
+      display.drawTextCentered(display.width() / 2, 64 - 11, "toggle: " PRESS_LABEL);
     } else if (_page == HomePage::SHUTDOWN) {
       display.setColor(UIColor::corp_blue);
       display.setTextSize(1);
@@ -478,6 +515,10 @@ public:
       return true;
     }
 #endif
+    if (c == KEY_ENTER && _page == HomePage::BOT) {
+      _task->toggleBot();
+      return true;
+    }
     if (c == KEY_ENTER && _page == HomePage::SHUTDOWN) {
       _shutdown_init = true;  // need to wait for button to be released
       return true;
@@ -966,4 +1007,18 @@ void UITask::toggleBuzzer() {
     showAlert(buzzer.isQuiet() ? "Buzzer: OFF" : "Buzzer: ON", 800);
     _next_refresh = 0;  // trigger refresh
   #endif
+}
+
+bool UITask::getBotState() {
+  return botIsEnabled();
+}
+
+void UITask::toggleBot() {
+  char reply[256];
+  const char* cmd = botIsEnabled() ? "!bot off" : "!bot on";
+  if (botHandleConfig(cmd, reply, sizeof(reply))) {
+    showAlert(botIsEnabled() ? "Bot: Enabled" : "Bot: Disabled", 800);
+    _next_refresh = 0;
+    notify(UIEventType::ack);
+  }
 }

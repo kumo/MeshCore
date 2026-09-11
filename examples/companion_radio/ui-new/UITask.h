@@ -89,6 +89,8 @@ public:
   void toggleBuzzer();
   bool getGPSState();
   void toggleGPS();
+  bool getBotState();
+  void toggleBot();
 
 
   // from AbstractUITask

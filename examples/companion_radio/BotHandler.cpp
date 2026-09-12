@@ -358,7 +358,19 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
     return true;
   }
 
-  if (strcmp(text, "!bot home clear") == 0) {
+  if (strcmp(text, "!bot clear location") == 0) {
+    bot_location[0] = '\0';
+
+    if (!botSaveState()) {
+      snprintf(reply, reply_len, "Error: could not save bot state");
+      return true;
+    }
+
+    snprintf(reply, reply_len, "OK - location cleared");
+    return true;
+  }
+
+  if (strcmp(text, "!bot clear home") == 0) {
     home_repeater_hash_len = 0;
     memset(home_repeater_hash, 0, sizeof(home_repeater_hash));
 

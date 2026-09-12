@@ -15,7 +15,8 @@ Bot configuration commands work via **Direct Message only** for security.
 - `!bot reply-all on` - Enable bot responses on non-bot channels (Public, etc.)
 - `!bot reply-all off` - Disable bot responses on non-bot channels (default)
 - `!bot home <hash>` - Set home repeater hash (1-3 bytes hex, e.g., "8d" or "8dbb")
-- `!bot home clear` - Clear home repeater setting (reply everywhere)
+- `!bot clear location` - Clear location setting
+- `!bot clear home` - Clear home repeater setting (reply everywhere)
 - `!bot clear` - Clear reply tracking state (resets spam prevention)
 
 State is persisted to `/meshbot` file on device.

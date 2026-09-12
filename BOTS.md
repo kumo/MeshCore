@@ -57,9 +57,9 @@ The arc (⌢) representation makes hop count instantly scannable for nearby conn
 Shows hop count and location. "prova" is Italian alternative to "test".
 
 **In #bot channel:**
-- Shows full path with hex hashes
-- Direct: `@[Bob] direct 📍 Rasa (VA) 🤖`
-- With hops: `@[Bob] 3 hops a1b2→c3d4 📍 Rasa (VA) 🤖`
+- Shows full path with hex hashes (location omitted)
+- Direct: `@[Bob] direct 🤖`
+- With hops: `@[Bob] 3 hops: a1b2→c3d4 🤖`
 
 **In other channels (#test, #ping, #prove):**
 - Shows simplified format with best repeater and path distance
@@ -86,17 +86,17 @@ Shows path information and warns about configuration issues.
 
 **With 1-byte hashes:**
 - Shows full hex path (resolution unreliable with 1-byte)
+- Location is omitted (use `test`/`prova` in other channels for location)
 - Example:
   ```
-  @[Bob] 3 hops: a1→b2→c3
-  📍 Rasa (VA) 🤖
+  @[Bob] 3 hops: a1→b2→c3 🤖
   ⚠ set 2-byte
   ```
 
 **With 2-byte or 3-byte hashes:**
 - Shows known repeater names only: `→` between adjacent hops, `⇢` when hops are skipped or unknown
 - Format: `N hops: First⇢Last` or `N hops: First→Second⇢Last`
-- Location is omitted (path names use the available budget; use `test`/`prova` for location)
+- Location is omitted (use `test`/`prova` in other channels for location)
 - Examples:
   - `@[Bob] 1 hop: IT-LIG-Rasa-R 🤖`
   - `@[Bob] 3 hops: FirstHop⇢LastHop 🤖`
@@ -139,7 +139,7 @@ When showing "via X" in messages, the bot selects the most relevant repeater usi
 All bot responses follow this pattern:
 - `@[SenderName]` - Indicates who the response is for
 - Message content - Hop count, repeater info, etc.
-- `📍 Location` - Location pin emoji before location (if set; omitted on named `path` replies)
+- `📍 Location` - Location pin emoji before location (if set; omitted on `path` replies and `test`/`prova` in #bot channel)
 - `🤖` - Bot emoji at end to indicate automated response
 
 The pin emoji (📍) keeps the format language-neutral while clearly indicating the destination.
@@ -180,8 +180,7 @@ Bot (sender no region):
 
 User (in #bot): path
 Bot (1-byte hash, sender no region):
-  @[Eve] 3 hops: a1→b2→c3
-  📍 Rasa (VA) 🤖
+  @[Eve] 3 hops: a1→b2→c3 🤖
   ⚠ set 2-byte & region it
 
 # In Public channel (reply-all enabled):

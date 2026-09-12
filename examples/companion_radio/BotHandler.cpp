@@ -1194,8 +1194,10 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
     const char* warnings = getBotWarnings(hash_size, pkt->hasTransportCodes());
 
     char body[128];
+    const char* test_location = location;
     if (strcmp(channel_name, "#bot") == 0) {
       buildHopPath(body, sizeof(body), pkt);
+      test_location = nullptr;  // Don't show location with hash paths
     } else if (hash_size == 1) {
       // 1-byte hashes: unreliable resolution, just show hop count
       uint8_t hop_count = pkt->getPathHashCount();
@@ -1208,7 +1210,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       buildHopSummary(body, sizeof(body), mesh, pkt);
     }
 
-    sendBotReply(mesh, channel_name, channel, sender_name, body, location, warnings);
+    sendBotReply(mesh, channel_name, channel, sender_name, body, test_location, warnings);
     return true;
   }
 
@@ -1219,8 +1221,8 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
     uint8_t hop_count = pkt->getPathHashCount();
     uint8_t hash_size = pkt->getPathHashSize();
     const char* warnings = getBotWarnings(hash_size, pkt->hasTransportCodes());
-    // Named paths omit location to free budget for repeater names; hex paths keep it.
-    const char* path_location = (hash_size == 1) ? location : nullptr;
+    // Don't show location with any path display (hash or named)
+    const char* path_location = nullptr;
 
     char body[128];
     if (hash_size == 1) {

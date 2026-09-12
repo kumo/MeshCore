@@ -1064,6 +1064,12 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
 
   Serial.printf("[BOT] Sender: %s, Message: %s\n", sender_name, message);
 
+  // Skip if sender is ourselves (message echoed back via repeater)
+  if (sender_name[0] != '\0' && strcmp(sender_name, mesh.getNodeName()) == 0) {
+    Serial.printf("[BOT] Ignoring message from self\n");
+    return false;
+  }
+
   const char* cmd = skipLeadingWhitespace(
       stripLeadingBotMention(skipLeadingWhitespace(message), mesh.getNodeName()));
   if (cmd != message) {

@@ -12,7 +12,7 @@ Bot configuration commands work via **Direct Message only** for security.
 - `!bot on` or `!bot enable` - Enable bot responses
 - `!bot off` or `!bot disable` - Disable bot responses
 - `!bot location <text>` - Set global location (e.g., "Rasa (VA)", "Milano : JN45ab")
-- `!bot mute-at <hash>` - Set repeater hash to mute at (1-3 bytes hex, e.g., "8d" or "8dbb")
+- `!bot mute-at <hashes>` - Set repeater hashes to mute at (1-3 bytes hex each, comma-separated, e.g., "8dbb" or "8dbb,9abc,1234")
 - `!bot location-at <hash> <text>` - Set location when last hop matches hash (e.g., "8dbb Rasa (VA)")
 - `!bot reply-all on` - Enable bot responses on non-bot channels (Public, etc.)
 - `!bot reply-all off` - Disable bot responses on non-bot channels (default)
@@ -29,7 +29,7 @@ Bot configuration commands work via **Direct Message only** for security.
 
 State is persisted to `/meshbot` file on device.
 
-**Mute-at Repeater:** When configured, the bot will not send replies when the last hop matches the mute-at repeater hash. This prevents the bot from replying when at a specific location (e.g., when at the office). The hash comparison uses the minimum of configured and path hash lengths, so "8dbb" will match both 1-byte (8d) and 2-byte (8dbb) paths.
+**Mute-at Repeater:** When configured, the bot will not send replies when the last hop matches any of the configured mute-at repeater hashes. This prevents the bot from replying when at specific locations (e.g., when at the office where multiple repeaters may be heard). Multiple hashes can be specified as a comma-separated list. The hash comparison uses the minimum of configured and path hash lengths, so "8dbb" will match both 1-byte (8d) and 2-byte (8dbb) paths.
 
 **Location-at Repeater:** When configured, the bot will override the global location setting when the last hop matches the location-at repeater hash. This allows a portable bot to show different locations based on which repeater it's hearing. For example, a portable companion could show "Rasa (VA)" when at home (last hop matches home repeater) but show no location when traveling elsewhere. If location-at is not configured, the global location setting is used.
 

@@ -21,8 +21,13 @@ static char bot_location[64] = {0};
 static bool reply_all_channels = false;
 static bool warnings_enabled = true;
 static bool match_sender_region = false;
-static uint8_t mute_at_hash[3] = {0};
-static uint8_t mute_at_hash_len = 0;
+
+// Mute-at: support multiple repeater hashes
+static constexpr uint8_t MAX_MUTE_AT_HASHES = 8;
+static uint8_t mute_at_hashes[MAX_MUTE_AT_HASHES][3] = {0};
+static uint8_t mute_at_hash_lens[MAX_MUTE_AT_HASHES] = {0};
+static uint8_t mute_at_count = 0;
+
 static uint8_t location_at_hash[3] = {0};
 static uint8_t location_at_hash_len = 0;
 static char location_at_text[64] = {0};
@@ -170,7 +175,28 @@ void botInit() {
         region = strtok_r(nullptr, ",", &region_ctx);
       }
     } else if (strncmp(line, "mute_at=", 8) == 0) {
-      mute_at_hash_len = parseHexString(line + 8, mute_at_hash, sizeof(mute_at_hash));
+      // Parse comma-separated mute_at hashes (e.g., "8abc,9def,1234")
+      char* mute_ctx = nullptr;
+      char* mute_str = line + 8;
+      char* hash_str = strtok_r(mute_str, ",", &mute_ctx);
+      mute_at_count = 0;
+
+      while (hash_str != nullptr && mute_at_count < MAX_MUTE_AT_HASHES) {
+        // Trim leading/trailing spaces
+        while (*hash_str == ' ') hash_str++;
+        char* end = hash_str + strlen(hash_str) - 1;
+        while (end > hash_str && *end == ' ') *end-- = '\0';
+
+        if (*hash_str != '\0') {
+          uint8_t len = parseHexString(hash_str, mute_at_hashes[mute_at_count], 3);
+          if (len > 0) {
+            mute_at_hash_lens[mute_at_count] = len;
+            mute_at_count++;
+          }
+        }
+
+        hash_str = strtok_r(nullptr, ",", &mute_ctx);
+      }
     } else if (strncmp(line, "location_at=", 12) == 0) {
       location_at_hash_len = parseHexString(line + 12, location_at_hash, sizeof(location_at_hash));
     } else if (strncmp(line, "location_at_text=", 17) == 0) {
@@ -178,7 +204,12 @@ void botInit() {
       location_at_text[sizeof(location_at_text) - 1] = '\0';
     } else if (strncmp(line, "home=", 5) == 0) {
       // Backwards compatibility: home= is now mute_at=
-      mute_at_hash_len = parseHexString(line + 5, mute_at_hash, sizeof(mute_at_hash));
+      mute_at_count = 0;
+      uint8_t len = parseHexString(line + 5, mute_at_hashes[0], 3);
+      if (len > 0) {
+        mute_at_hash_lens[0] = len;
+        mute_at_count = 1;
+      }
     }
     line = strtok_r(nullptr, "\n", &ctx);
   }
@@ -218,10 +249,18 @@ static bool botSaveState() {
     file.printf("\n");
   }
 
-  if (mute_at_hash_len > 0) {
-    char hex_str[8];
-    bytesToHexString(mute_at_hash, mute_at_hash_len, hex_str, sizeof(hex_str));
-    file.printf("mute_at=%s\n", hex_str);
+  // Save mute_at hashes as comma-separated list
+  if (mute_at_count > 0) {
+    file.printf("mute_at=");
+    for (uint8_t i = 0; i < mute_at_count; i++) {
+      char hex_str[8];
+      bytesToHexString(mute_at_hashes[i], mute_at_hash_lens[i], hex_str, sizeof(hex_str));
+      file.printf("%s", hex_str);
+      if (i < mute_at_count - 1) {
+        file.printf(",");
+      }
+    }
+    file.printf("\n");
   }
 
   if (location_at_hash_len > 0) {
@@ -288,9 +327,30 @@ void botGetMuteAtHash(char* buf, size_t max_len) {
 
   buf[0] = '\0';
 
-  if (mute_at_hash_len > 0) {
-    bytesToHexString(mute_at_hash, mute_at_hash_len, buf, max_len);
+  if (mute_at_count == 0) return;
+
+  size_t pos = 0;
+  for (uint8_t i = 0; i < mute_at_count && pos < max_len - 1; i++) {
+    // Add comma if not first hash and there's space
+    if (i > 0 && pos + 1 < max_len - 1) {
+      buf[pos++] = ',';
+    }
+
+    // Convert hash to hex string
+    char hex_str[8];
+    bytesToHexString(mute_at_hashes[i], mute_at_hash_lens[i], hex_str, sizeof(hex_str));
+    size_t hex_len = strlen(hex_str);
+
+    // Copy hex string if there's space
+    if (pos + hex_len < max_len) {
+      strcpy(buf + pos, hex_str);
+      pos += hex_len;
+    } else {
+      break;  // Not enough space
+    }
   }
+
+  buf[pos] = '\0';
 }
 
 void botGetLocationAtHash(char* buf, size_t max_len) {
@@ -382,11 +442,11 @@ static uint32_t hashSenderName(const char* name) {
   return hash;
 }
 
-// Check if last hop in path matches configured mute_at repeater
-// Returns true if at mute_at repeater, false otherwise
+// Check if last hop in path matches any configured mute_at repeater
+// Returns true if at any mute_at repeater, false otherwise
 static bool isAtMuteAtRepeater(mesh::Packet* pkt) {
   // Not configured - never muted
-  if (mute_at_hash_len == 0) return false;
+  if (mute_at_count == 0) return false;
 
   uint8_t hop_count = pkt->getPathHashCount();
   if (hop_count == 0) return false;  // Direct connection, not via repeater
@@ -394,16 +454,27 @@ static bool isAtMuteAtRepeater(mesh::Packet* pkt) {
   uint8_t hash_size = pkt->getPathHashSize();
   const uint8_t* last_hop = &pkt->path[(hop_count - 1) * hash_size];
 
-  // Compare configured hash with last hop
-  // Compare only up to the minimum of config length and path hash size
-  // This way "8dbb" matches both 1-byte "8d" and 2-byte "8dbb"
-  uint8_t compare_len = (mute_at_hash_len < hash_size) ? mute_at_hash_len : hash_size;
+  // Check against all configured mute-at hashes
+  for (uint8_t idx = 0; idx < mute_at_count; idx++) {
+    uint8_t hash_len = mute_at_hash_lens[idx];
+    const uint8_t* hash = mute_at_hashes[idx];
 
-  for (uint8_t i = 0; i < compare_len; i++) {
-    if (mute_at_hash[i] != last_hop[i]) return false;
+    // Compare only up to the minimum of config length and path hash size
+    // This way "8dbb" matches both 1-byte "8d" and 2-byte "8dbb"
+    uint8_t compare_len = (hash_len < hash_size) ? hash_len : hash_size;
+
+    bool matches = true;
+    for (uint8_t i = 0; i < compare_len; i++) {
+      if (hash[i] != last_hop[i]) {
+        matches = false;
+        break;
+      }
+    }
+
+    if (matches) return true;  // Found a match
   }
 
-  return true;
+  return false;  // No matches
 }
 
 // Get effective location based on last hop
@@ -493,9 +564,9 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
       }
     }
 
-    if (mute_at_hash_len > 0) {
-      char hex_str[8];
-      bytesToHexString(mute_at_hash, mute_at_hash_len, hex_str, sizeof(hex_str));
+    if (mute_at_count > 0) {
+      char hex_str[64];
+      botGetMuteAtHash(hex_str, sizeof(hex_str));
       len = strlen(status);
       snprintf(status + len, sizeof(status) - len, ", mute-at: %s", hex_str);
     }
@@ -604,31 +675,58 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
   }
 
   if (strncmp(text, "!bot mute-at ", 13) == 0) {
-    const char* hash_str = text + 13;
-    uint8_t new_hash[3];
-    uint8_t new_len = parseHexString(hash_str, new_hash, sizeof(new_hash));
+    const char* hashes_str = text + 13;
 
-    if (new_len == 0 || new_len > 3) {
-      snprintf(reply, reply_len, "Error: invalid hex string (use 1-3 bytes, e.g. '8dbb')");
-      return true;
+    // Parse comma-separated hashes
+    char temp_buf[128];
+    strncpy(temp_buf, hashes_str, sizeof(temp_buf) - 1);
+    temp_buf[sizeof(temp_buf) - 1] = '\0';
+
+    mute_at_count = 0;
+
+    char* ctx = nullptr;
+    char* hash_str = strtok_r(temp_buf, ",", &ctx);
+    while (hash_str != nullptr && mute_at_count < MAX_MUTE_AT_HASHES) {
+      // Trim leading spaces
+      while (*hash_str == ' ') hash_str++;
+
+      // Trim trailing spaces
+      char* end = hash_str + strlen(hash_str) - 1;
+      while (end > hash_str && *end == ' ') *end-- = '\0';
+
+      if (*hash_str != '\0') {
+        uint8_t len = parseHexString(hash_str, mute_at_hashes[mute_at_count], 3);
+        if (len > 0 && len <= 3) {
+          mute_at_hash_lens[mute_at_count] = len;
+          mute_at_count++;
+        }
+      }
+
+      hash_str = strtok_r(nullptr, ",", &ctx);
     }
 
-    memcpy(mute_at_hash, new_hash, new_len);
-    mute_at_hash_len = new_len;
+    if (mute_at_count == 0) {
+      snprintf(reply, reply_len, "Error: invalid hex string (use 1-3 bytes, e.g. '8dbb' or '8dbb,9abc')");
+      return true;
+    }
 
     if (!botSaveState()) {
       snprintf(reply, reply_len, "Error: could not save bot state");
       return true;
     }
 
-    char hex_str[8];
-    bytesToHexString(mute_at_hash, mute_at_hash_len, hex_str, sizeof(hex_str));
-    snprintf(reply, reply_len, "OK - mute-at set to: %s", hex_str);
+    if (mute_at_count == 1) {
+      char hex_str[8];
+      bytesToHexString(mute_at_hashes[0], mute_at_hash_lens[0], hex_str, sizeof(hex_str));
+      snprintf(reply, reply_len, "OK - mute-at set to: %s", hex_str);
+    } else {
+      snprintf(reply, reply_len, "OK - mute-at set to %d hashes", mute_at_count);
+    }
     return true;
   }
 
   if (strncmp(text, "!bot home ", 10) == 0) {
-    // Backwards compatibility: !bot home is now !bot mute-at
+    // Backwards compatibility: !bot home is now !bot mute-at (single hash only)
     const char* hash_str = text + 10;
     uint8_t new_hash[3];
     uint8_t new_len = parseHexString(hash_str, new_hash, sizeof(new_hash));
@@ -638,8 +736,10 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
       return true;
     }
 
-    memcpy(mute_at_hash, new_hash, new_len);
-    mute_at_hash_len = new_len;
+    mute_at_count = 0;
+    memcpy(mute_at_hashes[0], new_hash, new_len);
+    mute_at_hash_lens[0] = new_len;
+    mute_at_count = 1;
 
     if (!botSaveState()) {
       snprintf(reply, reply_len, "Error: could not save bot state");
@@ -647,7 +747,7 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
     }
 
     char hex_str[8];
-    bytesToHexString(mute_at_hash, mute_at_hash_len, hex_str, sizeof(hex_str));
+    bytesToHexString(mute_at_hashes[0], mute_at_hash_lens[0], hex_str, sizeof(hex_str));
     snprintf(reply, reply_len, "OK - mute-at set to: %s (use !bot mute-at)", hex_str);
     return true;
   }
@@ -765,8 +865,11 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
   }
 
   if (strcmp(text, "!bot clear mute-at") == 0) {
-    mute_at_hash_len = 0;
-    memset(mute_at_hash, 0, sizeof(mute_at_hash));
+    mute_at_count = 0;
+    for (uint8_t i = 0; i < MAX_MUTE_AT_HASHES; i++) {
+      mute_at_hash_lens[i] = 0;
+      memset(mute_at_hashes[i], 0, 3);
+    }
 
     if (!botSaveState()) {
       snprintf(reply, reply_len, "Error: could not save bot state");
@@ -793,8 +896,11 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
 
   if (strcmp(text, "!bot clear home") == 0) {
     // Backwards compatibility: clear home is now clear mute-at
-    mute_at_hash_len = 0;
-    memset(mute_at_hash, 0, sizeof(mute_at_hash));
+    mute_at_count = 0;
+    for (uint8_t i = 0; i < MAX_MUTE_AT_HASHES; i++) {
+      mute_at_hash_lens[i] = 0;
+      memset(mute_at_hashes[i], 0, 3);
+    }
 
     if (!botSaveState()) {
       snprintf(reply, reply_len, "Error: could not save bot state");

@@ -5,6 +5,7 @@
 #include "MyMesh.h"
 #include <Arduino.h>
 #include <Mesh.h>
+#include <SHA256.h>
 
 #ifdef ESP32
   #include <SPIFFS.h>
@@ -23,6 +24,12 @@ static bool match_sender_region = false;
 static uint8_t home_repeater_hash[3] = {0};
 static uint8_t home_repeater_hash_len = 0;
 
+// Region matching: store region names and derived TransportKeys
+static constexpr uint8_t MAX_MATCH_REGIONS = 8;
+static uint8_t match_region_count = 0;
+static char match_region_names[MAX_MATCH_REGIONS][32] = {0};
+static TransportKey match_region_keys[MAX_MATCH_REGIONS];
+
 // Reply tracking for non-bot channels (prevent spam)
 static constexpr uint8_t MAX_REPLY_TRACKING = 16;
 static constexpr uint32_t REPLY_WINDOW_SEC = 600;  // 10 minutes
@@ -35,6 +42,10 @@ struct ReplyState {
 
 static ReplyState reply_tracking[MAX_REPLY_TRACKING] = {0};
 static uint8_t reply_tracking_count = 0;
+
+// Forward declarations
+static void generateRegionKeys();
+static const TransportKey* matchIncomingRegion(mesh::Packet* pkt);
 
 // Convert hex char to value (0-15), returns 255 on error
 static uint8_t hexCharToValue(char c) {
@@ -76,6 +87,28 @@ static void bytesToHexString(const uint8_t* bytes, uint8_t len, char* dest, size
   dest[pos] = '\0';
 }
 
+// Generate TransportKeys from region names using SHA256
+// Similar to NessoN1 approach: SHA256("#regionname") -> TransportKey
+static void generateRegionKeys() {
+  match_region_count = 0;
+
+  for (uint8_t i = 0; i < MAX_MATCH_REGIONS; i++) {
+    if (match_region_names[i][0] == '\0') break;
+
+    // Prepend '#' to region name for hashing (standard format)
+    char hash_input[33];
+    snprintf(hash_input, sizeof(hash_input), "#%s", match_region_names[i]);
+
+    // Calculate SHA256 to derive TransportKey
+    SHA256 sha;
+    sha.update(hash_input, strlen(hash_input));
+    sha.finalize(match_region_keys[i].key, sizeof(match_region_keys[i].key));
+
+    match_region_count++;
+    Serial.printf("[BOT] Generated key for region '%s'\n", match_region_names[i]);
+  }
+}
+
 void botInit() {
 #ifdef ESP32
   File file = SPIFFS.open(BOT_STATE_FILE);
@@ -94,7 +127,7 @@ void botInit() {
   size_t len = file.readBytes(buf, sizeof(buf) - 1);
   file.close();
 
-  // Parse line by line: "enabled=0/1", "location=...", "reply_all=0/1", "warnings=0/1", "match_region=0/1", "home=..."
+  // Parse line by line: "enabled=0/1", "location=...", "reply_all=0/1", "warnings=0/1", "match_region=0/1", "match_regions=...", "home=..."
   char* ctx = nullptr;
   char* line = strtok_r(buf, "\n", &ctx);
   while (line != nullptr) {
@@ -109,10 +142,38 @@ void botInit() {
       warnings_enabled = (line[9] == '1');
     } else if (strncmp(line, "match_region=", 13) == 0) {
       match_sender_region = (line[13] == '1');
+    } else if (strncmp(line, "match_regions=", 14) == 0) {
+      // Parse comma-separated region names (e.g., "it-lom, europe, it")
+      char* region_ctx = nullptr;
+      char* region_str = line + 14;
+      char* region = strtok_r(region_str, ",", &region_ctx);
+      match_region_count = 0;
+
+      while (region != nullptr && match_region_count < MAX_MATCH_REGIONS) {
+        // Trim leading spaces
+        while (*region == ' ') region++;
+
+        // Trim trailing spaces
+        char* end = region + strlen(region) - 1;
+        while (end > region && *end == ' ') *end-- = '\0';
+
+        if (*region != '\0') {
+          strncpy(match_region_names[match_region_count], region, sizeof(match_region_names[0]) - 1);
+          match_region_names[match_region_count][sizeof(match_region_names[0]) - 1] = '\0';
+          match_region_count++;
+        }
+
+        region = strtok_r(nullptr, ",", &region_ctx);
+      }
     } else if (strncmp(line, "home=", 5) == 0) {
       home_repeater_hash_len = parseHexString(line + 5, home_repeater_hash, sizeof(home_repeater_hash));
     }
     line = strtok_r(nullptr, "\n", &ctx);
+  }
+
+  // Generate TransportKeys from region names
+  if (match_region_count > 0) {
+    generateRegionKeys();
   }
 }
 
@@ -132,6 +193,18 @@ static bool botSaveState() {
   file.printf("reply_all=%d\n", reply_all_channels ? 1 : 0);
   file.printf("warnings=%d\n", warnings_enabled ? 1 : 0);
   file.printf("match_region=%d\n", match_sender_region ? 1 : 0);
+
+  // Save match_regions as comma-separated list
+  if (match_region_count > 0) {
+    file.printf("match_regions=");
+    for (uint8_t i = 0; i < match_region_count; i++) {
+      file.printf("%s", match_region_names[i]);
+      if (i < match_region_count - 1) {
+        file.printf(",");
+      }
+    }
+    file.printf("\n");
+  }
 
   if (home_repeater_hash_len > 0) {
     char hex_str[8];
@@ -299,6 +372,16 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
     snprintf(status + len, sizeof(status) - len, ", match-region: %s",
              match_sender_region ? "on" : "off");
 
+    if (match_region_count > 0) {
+      len = strlen(status);
+      snprintf(status + len, sizeof(status) - len, ", regions: ");
+      for (uint8_t i = 0; i < match_region_count; i++) {
+        len = strlen(status);
+        snprintf(status + len, sizeof(status) - len, "%s%s",
+                 match_region_names[i], i < match_region_count - 1 ? "," : "");
+      }
+    }
+
     if (home_repeater_hash_len > 0) {
       char hex_str[8];
       bytesToHexString(home_repeater_hash, home_repeater_hash_len, hex_str, sizeof(hex_str));
@@ -426,6 +509,51 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
     return true;
   }
 
+  if (strncmp(text, "!bot match region ", 18) == 0) {
+    const char* regions_str = text + 18;
+
+    // Parse comma-separated region names
+    char temp_buf[256];
+    strncpy(temp_buf, regions_str, sizeof(temp_buf) - 1);
+    temp_buf[sizeof(temp_buf) - 1] = '\0';
+
+    // Clear existing regions
+    for (uint8_t i = 0; i < MAX_MATCH_REGIONS; i++) {
+      match_region_names[i][0] = '\0';
+    }
+    match_region_count = 0;
+
+    char* ctx = nullptr;
+    char* region = strtok_r(temp_buf, ",", &ctx);
+    while (region != nullptr && match_region_count < MAX_MATCH_REGIONS) {
+      // Trim leading spaces
+      while (*region == ' ') region++;
+
+      // Trim trailing spaces
+      char* end = region + strlen(region) - 1;
+      while (end > region && *end == ' ') *end-- = '\0';
+
+      if (*region != '\0') {
+        strncpy(match_region_names[match_region_count], region, sizeof(match_region_names[0]) - 1);
+        match_region_names[match_region_count][sizeof(match_region_names[0]) - 1] = '\0';
+        match_region_count++;
+      }
+
+      region = strtok_r(nullptr, ",", &ctx);
+    }
+
+    // Generate TransportKeys for the new regions
+    generateRegionKeys();
+
+    if (!botSaveState()) {
+      snprintf(reply, reply_len, "Error: could not save bot state");
+      return true;
+    }
+
+    snprintf(reply, reply_len, "OK - match regions set to: %s", regions_str);
+    return true;
+  }
+
   if (strcmp(text, "!bot clear location") == 0) {
     bot_location[0] = '\0';
 
@@ -448,6 +576,21 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
     }
 
     snprintf(reply, reply_len, "OK - home repeater cleared");
+    return true;
+  }
+
+  if (strcmp(text, "!bot clear regions") == 0) {
+    for (uint8_t i = 0; i < MAX_MATCH_REGIONS; i++) {
+      match_region_names[i][0] = '\0';
+    }
+    match_region_count = 0;
+
+    if (!botSaveState()) {
+      snprintf(reply, reply_len, "Error: could not save bot state");
+      return true;
+    }
+
+    snprintf(reply, reply_len, "OK - match regions cleared");
     return true;
   }
 
@@ -1067,25 +1210,37 @@ static bool sendCasualReply(MyMesh& mesh, mesh::GroupChannel& channel,
     snprintf(reply, sizeof(reply), "%s 🤖", text);
   }
 
-  uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
+  uint32_t timestamp = mesh.getRTCClock()->getCurrentTimeUnique();
   bool success = false;
 
-  // Check if we should match sender's region
-  Serial.printf("[BOT] Casual reply: match_sender_region=%d, pkt=%p, hasTransportCodes=%d\n",
-                match_sender_region, pkt, pkt ? pkt->hasTransportCodes() : 0);
-  if (match_sender_region && pkt != nullptr && pkt->hasTransportCodes()) {
-    // Use sender's transport codes
-    Serial.printf("[BOT] Using sender's transport codes: %04x %04x\n",
-                  pkt->transport_codes[0], pkt->transport_codes[1]);
-    success = mesh.sendGroupMessageWithTransportCodes(timestamp, channel, mesh.getNodeName(),
-                                                      reply, strlen(reply),
-                                                      pkt->transport_codes);
-    Serial.printf("[BOT] Sent casual reply with sender's region\n");
+  // Try to match incoming region if configured
+  const TransportKey* matched_key = matchIncomingRegion(pkt);
+
+  if (matched_key != nullptr) {
+    // Create packet manually to use specific region key (NessoN1 approach)
+    uint8_t temp[5 + MAX_TEXT_LEN + 32];
+    memcpy(temp, &timestamp, 4);
+    temp[4] = 0;  // TXT_TYPE_PLAIN
+
+    // Add sender name prefix (bot name)
+    sprintf((char*)&temp[5], "%s: ", mesh.getNodeName());
+    int prefix_len = strlen((char*)&temp[5]);
+
+    int reply_len = strlen(reply);
+    if (reply_len + prefix_len > MAX_TEXT_LEN) reply_len = MAX_TEXT_LEN - prefix_len;
+    memcpy(&temp[5 + prefix_len], reply, reply_len);
+
+    auto reply_pkt = mesh.createGroupDatagram(PAYLOAD_TYPE_GRP_TXT, channel,
+                                              temp, 5 + prefix_len + reply_len);
+    if (reply_pkt) {
+      mesh.sendFloodScoped(*matched_key, reply_pkt, 0);
+      Serial.printf("[BOT] Sent casual reply with matched region\n");
+      success = true;
+    }
   } else {
     // Use device's default configuration
     success = mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply));
-    Serial.printf("[BOT] Sent casual reply with device config (match=%d, pkt=%p, codes=%d)\n",
-                  match_sender_region, pkt, pkt ? pkt->hasTransportCodes() : 0);
+    Serial.printf("[BOT] Sent casual reply with device default region\n");
   }
 
   return success;
@@ -1104,28 +1259,67 @@ static bool sendBotReply(MyMesh& mesh, const char* channel_name, mesh::GroupChan
     snprintf(reply, sizeof(reply), "@[%s] %s 🤖%s", sender_name, body, warnings);
   }
 
-  uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
+  uint32_t timestamp = mesh.getRTCClock()->getCurrentTimeUnique();
   bool success = false;
 
-  // Check if we should match sender's region
-  Serial.printf("[BOT] match_sender_region=%d, pkt=%p, hasTransportCodes=%d\n",
-                match_sender_region, pkt, pkt ? pkt->hasTransportCodes() : 0);
-  if (match_sender_region && pkt != nullptr && pkt->hasTransportCodes()) {
-    // Use sender's transport codes
-    Serial.printf("[BOT] Using sender's transport codes: %04x %04x\n",
-                  pkt->transport_codes[0], pkt->transport_codes[1]);
-    success = mesh.sendGroupMessageWithTransportCodes(timestamp, channel, mesh.getNodeName(),
-                                                      reply, strlen(reply),
-                                                      pkt->transport_codes);
-    Serial.printf("[BOT] Sent reply to channel %s with sender's region\n", channel_name);
+  // Try to match incoming region if configured
+  const TransportKey* matched_key = matchIncomingRegion(pkt);
+
+  if (matched_key != nullptr) {
+    // Create packet manually to use specific region key (NessoN1 approach)
+    uint8_t temp[5 + MAX_TEXT_LEN + 32];
+    memcpy(temp, &timestamp, 4);
+    temp[4] = 0;  // TXT_TYPE_PLAIN
+
+    // Add sender name prefix (bot name)
+    sprintf((char*)&temp[5], "%s: ", mesh.getNodeName());
+    int prefix_len = strlen((char*)&temp[5]);
+
+    int reply_len = strlen(reply);
+    if (reply_len + prefix_len > MAX_TEXT_LEN) reply_len = MAX_TEXT_LEN - prefix_len;
+    memcpy(&temp[5 + prefix_len], reply, reply_len);
+
+    auto reply_pkt = mesh.createGroupDatagram(PAYLOAD_TYPE_GRP_TXT, channel,
+                                              temp, 5 + prefix_len + reply_len);
+    if (reply_pkt) {
+      mesh.sendFloodScoped(*matched_key, reply_pkt, 0);
+      Serial.printf("[BOT] Sent reply to channel %s with matched region\n", channel_name);
+      success = true;
+    }
   } else {
     // Use device's default configuration
     success = mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply));
-    Serial.printf("[BOT] Sent reply to channel %s with device config (match=%d, pkt=%p, codes=%d)\n",
-                  channel_name, match_sender_region, pkt, pkt ? pkt->hasTransportCodes() : 0);
+    Serial.printf("[BOT] Sent reply to channel %s with device default region\n", channel_name);
   }
 
   return success;
+}
+
+// Try to match incoming packet's region against configured regions
+// Returns matched TransportKey pointer, or nullptr if no match
+static const TransportKey* matchIncomingRegion(mesh::Packet* pkt) {
+  if (match_region_count == 0 || pkt == nullptr || !pkt->hasTransportCodes()) {
+    return nullptr;
+  }
+
+  uint16_t incoming_code = pkt->transport_codes[0];
+
+  // Try each configured region
+  for (uint8_t i = 0; i < match_region_count; i++) {
+    // Calculate what transport code this region would produce for this packet
+    uint16_t expected_code = match_region_keys[i].calcTransportCode(pkt);
+
+    Serial.printf("[BOT] Checking region '%s': incoming=%04x, expected=%04x\n",
+                  match_region_names[i], incoming_code, expected_code);
+
+    if (incoming_code == expected_code) {
+      Serial.printf("[BOT] Matched region: '%s'\n", match_region_names[i]);
+      return &match_region_keys[i];
+    }
+  }
+
+  Serial.printf("[BOT] No region match found for code %04x\n", incoming_code);
+  return nullptr;
 }
 
 bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel& channel,

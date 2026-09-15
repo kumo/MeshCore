@@ -541,7 +541,11 @@ bool MyMesh::sendGroupMessageWithTransportCodes(uint32_t timestamp, mesh::GroupC
   auto pkt = createGroupDatagram(PAYLOAD_TYPE_GRP_TXT, channel, temp, 5 + prefix_len + text_len);
   if (pkt) {
     // Send with specific transport codes (cast away const since sendFlood modifies internal packet state)
+    Serial.printf("[MyMesh] sendGroupMessageWithTransportCodes: codes=%04x %04x\n",
+                  transport_codes[0], transport_codes[1]);
     sendFlood(pkt, const_cast<uint16_t*>(transport_codes), 0, _prefs.path_hash_mode + 1);
+    Serial.printf("[MyMesh] After sendFlood, pkt route_type=%d, pkt codes=%04x %04x\n",
+                  pkt->getRouteType(), pkt->transport_codes[0], pkt->transport_codes[1]);
     return true;
   }
   return false;

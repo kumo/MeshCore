@@ -254,9 +254,9 @@ static const char* getBotWarnings(uint8_t hash_size, bool has_region) {
   bool needs_region_warning = !has_region;
 
   if (needs_bytes_warning && needs_region_warning) {
-    return "\n⚠ set 2-byte & region it";
+    return "\n⚠ impostare 2-byte per vedere il path & region it";
   } else if (needs_bytes_warning) {
-    return "\n⚠ set 2-byte";
+    return "\n⚠ impostare 2-byte per vedere il path";
   } else if (needs_region_warning) {
     return "\n⚠ set region it";
   } else {
@@ -1161,9 +1161,9 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
         uint8_t hop_count = pkt->getPathHashCount();
         char body[192];
         if (hop_count == 0) {
-          snprintf(body, sizeof(body), "direct, %s (scrivi in #bot o #test)", location);
+          snprintf(body, sizeof(body), "direct, %s (scrivi nel canale #bot o #test)", location);
         } else {
-          snprintf(body, sizeof(body), "%d %s, %s (scrivi in #bot o #test)",
+          snprintf(body, sizeof(body), "%d %s, %s (scrivi nel canale #bot o #test)",
                    hop_count, hop_count == 1 ? "salto" : "salti", location);
         }
         sendCasualReply(mesh, channel, sender_name, body);

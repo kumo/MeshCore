@@ -8,12 +8,14 @@ Bot configuration commands work via **Direct Message only** for security.
 
 ### Commands
 
-- `!bot` or `!bot status` - Show bot enabled/disabled state, location, reply-all, and home repeater setting
+- `!bot` or `!bot status` - Show bot enabled/disabled state, location, reply-all, warnings, and home repeater setting
 - `!bot on` or `!bot enable` - Enable bot responses
 - `!bot off` or `!bot disable` - Disable bot responses
 - `!bot location <text>` - Set location (e.g., "Rasa (VA)", "Milano : JN45ab")
 - `!bot reply-all on` - Enable bot responses on non-bot channels (Public, etc.)
 - `!bot reply-all off` - Disable bot responses on non-bot channels (default)
+- `!bot warnings on` - Enable configuration warnings in replies (default)
+- `!bot warnings off` - Disable configuration warnings in replies
 - `!bot home <hash>` - Set home repeater hash (1-3 bytes hex, e.g., "8d" or "8dbb")
 - `!bot clear location` - Clear location setting
 - `!bot clear home` - Clear home repeater setting (reply everywhere)
@@ -73,11 +75,11 @@ Shows hop count and location. "prova" is Italian alternative to "test".
 
 **In Public (when reply-all is enabled):**
 - First reply: `@[Bob] 3 salti, Rasa (VA) 🤖`
-- Second strict command: `@[Bob] 3 salti, Rasa (VA) (scrivi in #bot o #test) 🤖`
+- Second strict command: `@[Bob] 3 salti, Rasa (VA) (scrivi nel canale #bot o #test) 🤖`
 
 **Warnings:**
 - If sender hasn't set region: Adds `⚠ set region it`
-- If using 1-byte hashes: Adds `⚠ set 2-byte`
+- If using 1-byte hashes: Adds `⚠ impostare 2-byte per vedere il path`
 - Both warnings appear if both conditions are true
 
 ### path / !path

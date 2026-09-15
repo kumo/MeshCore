@@ -16,14 +16,31 @@ Bot configuration commands work via **Direct Message only** for security.
 - `!bot reply-all off` - Disable bot responses on non-bot channels (default)
 - `!bot warnings on` - Enable configuration warnings in replies (default)
 - `!bot warnings off` - Disable configuration warnings in replies
+- `!bot match-region on` - Enable region matching for bot replies
+- `!bot match-region off` - Disable region matching for bot replies (default)
+- `!bot match region <regions>` - Set regions to match (comma-separated, e.g., "it-lom, europe, it")
 - `!bot home <hash>` - Set home repeater hash (1-3 bytes hex, e.g., "8d" or "8dbb")
 - `!bot clear location` - Clear location setting
 - `!bot clear home` - Clear home repeater setting (reply everywhere)
+- `!bot clear regions` - Clear configured match regions
 - `!bot clear` - Clear reply tracking state (resets spam prevention)
 
 State is persisted to `/meshbot` file on device.
 
 **Home Repeater:** When configured, the bot will not send replies when the last hop matches the home repeater. This prevents the bot from replying to local messages when at home. The hash comparison uses the minimum of configured and path hash lengths, so "8dbb" will match both 1-byte (8d) and 2-byte (8dbb) paths.
+
+**Region Matching:** The bot can detect which region scope an incoming message used and reply with the same region. This ensures replies reach the sender properly. Region matching works in two ways:
+
+1. **Configured regions** - Pre-configure regions with `!bot match region it-lom, europe`. When a message arrives, the bot tries to match the incoming transport code against each configured region. If a match is found, the reply uses that region.
+
+2. **Dynamic region extraction** - Specify region directly in the message (Italian regions only, starting with "it-"):
+   - `test it-lom-mi` → bot replies using it-lom-mi region
+   - `ping it-lom` → bot replies using it-lom region
+   - `prova2 it-lom-va` → bot replies using it-lom-va region
+
+   Dynamic extraction takes priority over configured regions and works with all bot commands (test, prova, ping, path, echo). Region names are extracted from the message text, converted to TransportKeys via SHA256("#regionname"), and used for the reply.
+
+If no region match is found (or region matching is disabled), the bot uses the device's default region configuration.
 
 ## Active Channels
 
@@ -41,7 +58,7 @@ On **other channels** (e.g. Public), only `test` / `prova` get a short casual re
 
 ## Channel Commands
 
-All commands are case-insensitive and accept text after the command (e.g., "Test mobile", "ping da casa"). A leading `@[companion name]` or `@[companion name]:` is accepted when it matches this node.
+All commands are case-insensitive and accept text after the command (e.g., "Test mobile", "ping da casa"). Commands also accept trailing digits (e.g., "test1", "ping2", "prova3") to allow users to avoid repeating identical message text. A leading `@[companion name]` or `@[companion name]:` is accepted when it matches this node.
 
 ### ping / !ping
 
@@ -197,4 +214,21 @@ Bot: (no reply - limit reached)
 
 User (same person, >10 min later): prova
 Bot: @[Alice] 2 salti, Rasa (VA) 🤖
+
+# With dynamic region extraction:
+User: test it-lom-mi
+Bot: @[Frank] 2 hops via IT-LIG-MteBeigua-D 📍 Rasa (VA) 🤖
+(Reply sent using it-lom-mi region scope)
+
+User: ping2 it-lom
+Bot: @[Grace] ⌢ ⌢ 🏓 pong! 🤖
+(Reply sent using it-lom region scope)
+
+# With trailing digits:
+User: test1
+Bot: @[Henry] direct 📍 Rasa (VA) 🤖
+
+User: test2
+Bot: @[Henry] direct 📍 Rasa (VA) 🤖
+(Different message text but same command)
 ```

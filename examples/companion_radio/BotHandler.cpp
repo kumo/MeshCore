@@ -305,13 +305,22 @@ static ReplyState* getReplyState(uint32_t sender_id, uint32_t current_time) {
 static bool isStrictTestCommand(const char* cmd) {
   if (cmd == nullptr) return false;
 
-  // Check for exact "test" or "prova" (case-insensitive, no trailing text)
-  if ((strncasecmp(cmd, "test", 4) == 0 && cmd[4] == '\0') ||
-      (strncasecmp(cmd, "prova", 5) == 0 && cmd[5] == '\0') ||
-      (strncasecmp(cmd, "!test", 5) == 0 && cmd[5] == '\0') ||
-      (strncasecmp(cmd, "!prova", 6) == 0 && cmd[6] == '\0')) {
+  // Helper to check if rest of string is just digits or empty
+  auto isDigitsOrEmpty = [](const char* s) {
+    if (*s == '\0') return true;
+    while (*s) {
+      if (*s < '0' || *s > '9') return false;
+      s++;
+    }
     return true;
-  }
+  };
+
+  // Check for "test" or "prova" followed by optional digits (e.g., test, test1, test2)
+  if (strncasecmp(cmd, "test", 4) == 0 && isDigitsOrEmpty(cmd + 4)) return true;
+  if (strncasecmp(cmd, "prova", 5) == 0 && isDigitsOrEmpty(cmd + 5)) return true;
+  if (strncasecmp(cmd, "!test", 5) == 0 && isDigitsOrEmpty(cmd + 5)) return true;
+  if (strncasecmp(cmd, "!prova", 6) == 0 && isDigitsOrEmpty(cmd + 6)) return true;
+
   return false;
 }
 
@@ -943,7 +952,8 @@ static bool matchesCommandWord(const char* message, const char* word) {
   size_t len = strlen(word);
   if (strncasecmp(message, word, len) != 0) return false;
   char next = message[len];
-  return next == '\0' || next == ' ' || next == '\t';
+  // Accept end of string, space, tab, or digit (for test1, prova2, etc.)
+  return next == '\0' || next == ' ' || next == '\t' || (next >= '0' && next <= '9');
 }
 
 static bool matchesBangCommandWord(const char* message, const char* word) {
@@ -956,6 +966,16 @@ static bool matchesTestOrProva(const char* message) {
          matchesBangCommandWord(message, "test") ||
          matchesCommandWord(message, "prova") ||
          matchesBangCommandWord(message, "prova");
+}
+
+static bool matchesPing(const char* message) {
+  return matchesCommandWord(message, "ping") ||
+         matchesBangCommandWord(message, "ping");
+}
+
+static bool matchesPath(const char* message) {
+  return matchesCommandWord(message, "path") ||
+         matchesBangCommandWord(message, "path");
 }
 
 static bool mentionMatchesNode(const char* mention, size_t mention_len, const char* node_name) {
@@ -1476,8 +1496,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
   }
 
   // Handle !ping command (case-insensitive)
-  if ((strncasecmp(cmd, "!ping", 5) == 0 && (cmd[5] == '\0' || cmd[5] == ' ')) ||
-      (strncasecmp(cmd, "ping", 4) == 0 && (cmd[4] == '\0' || cmd[4] == ' '))) {
+  if (matchesPing(cmd)) {
 
     uint8_t hop_count = pkt->getPathHashCount();
     char body[64];
@@ -1537,8 +1556,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
   }
 
   // Handle !path or path command
-  if ((strncasecmp(cmd, "!path", 5) == 0 && (cmd[5] == '\0' || cmd[5] == ' ')) ||
-      (strncasecmp(cmd, "path", 4) == 0 && (cmd[4] == '\0' || cmd[4] == ' '))) {
+  if (matchesPath(cmd)) {
 
     uint8_t hop_count = pkt->getPathHashCount();
     uint8_t hash_size = pkt->getPathHashSize();

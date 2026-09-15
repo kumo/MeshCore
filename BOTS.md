@@ -8,10 +8,12 @@ Bot configuration commands work via **Direct Message only** for security.
 
 ### Commands
 
-- `!bot` or `!bot status` - Show bot enabled/disabled state, location, reply-all, warnings, and home repeater setting
+- `!bot` or `!bot status` - Show bot enabled/disabled state, location, reply-all, warnings, mute-at, and location-at settings
 - `!bot on` or `!bot enable` - Enable bot responses
 - `!bot off` or `!bot disable` - Disable bot responses
-- `!bot location <text>` - Set location (e.g., "Rasa (VA)", "Milano : JN45ab")
+- `!bot location <text>` - Set global location (e.g., "Rasa (VA)", "Milano : JN45ab")
+- `!bot mute-at <hash>` - Set repeater hash to mute at (1-3 bytes hex, e.g., "8d" or "8dbb")
+- `!bot location-at <hash> <text>` - Set location when last hop matches hash (e.g., "8dbb Rasa (VA)")
 - `!bot reply-all on` - Enable bot responses on non-bot channels (Public, etc.)
 - `!bot reply-all off` - Disable bot responses on non-bot channels (default)
 - `!bot warnings on` - Enable configuration warnings in replies (default)
@@ -19,15 +21,17 @@ Bot configuration commands work via **Direct Message only** for security.
 - `!bot match-region on` - Enable region matching for bot replies
 - `!bot match-region off` - Disable region matching for bot replies (default)
 - `!bot match region <regions>` - Set regions to match (comma-separated, e.g., "it-lom, europe, it")
-- `!bot home <hash>` - Set home repeater hash (1-3 bytes hex, e.g., "8d" or "8dbb")
-- `!bot clear location` - Clear location setting
-- `!bot clear home` - Clear home repeater setting (reply everywhere)
+- `!bot clear location` - Clear global location setting
+- `!bot clear mute-at` - Clear mute-at setting (reply everywhere)
+- `!bot clear location-at` - Clear location-at setting
 - `!bot clear regions` - Clear configured match regions
 - `!bot clear` - Clear reply tracking state (resets spam prevention)
 
 State is persisted to `/meshbot` file on device.
 
-**Home Repeater:** When configured, the bot will not send replies when the last hop matches the home repeater. This prevents the bot from replying to local messages when at home. The hash comparison uses the minimum of configured and path hash lengths, so "8dbb" will match both 1-byte (8d) and 2-byte (8dbb) paths.
+**Mute-at Repeater:** When configured, the bot will not send replies when the last hop matches the mute-at repeater hash. This prevents the bot from replying when at a specific location (e.g., when at the office). The hash comparison uses the minimum of configured and path hash lengths, so "8dbb" will match both 1-byte (8d) and 2-byte (8dbb) paths.
+
+**Location-at Repeater:** When configured, the bot will override the global location setting when the last hop matches the location-at repeater hash. This allows a portable bot to show different locations based on which repeater it's hearing. For example, a portable companion could show "Rasa (VA)" when at home (last hop matches home repeater) but show no location when traveling elsewhere. If location-at is not configured, the global location setting is used.
 
 **Region Matching:** The bot can detect which region scope an incoming message used and reply with the same region. This ensures replies reach the sender properly. Region matching works in two ways:
 

@@ -21,8 +21,11 @@ static char bot_location[64] = {0};
 static bool reply_all_channels = false;
 static bool warnings_enabled = true;
 static bool match_sender_region = false;
-static uint8_t home_repeater_hash[3] = {0};
-static uint8_t home_repeater_hash_len = 0;
+static uint8_t mute_at_hash[3] = {0};
+static uint8_t mute_at_hash_len = 0;
+static uint8_t location_at_hash[3] = {0};
+static uint8_t location_at_hash_len = 0;
+static char location_at_text[64] = {0};
 
 // Region matching: store region names and derived TransportKeys
 static constexpr uint8_t MAX_MATCH_REGIONS = 8;
@@ -128,7 +131,7 @@ void botInit() {
   size_t len = file.readBytes(buf, sizeof(buf) - 1);
   file.close();
 
-  // Parse line by line: "enabled=0/1", "location=...", "reply_all=0/1", "warnings=0/1", "match_region=0/1", "match_regions=...", "home=..."
+  // Parse line by line: "enabled=0/1", "location=...", "reply_all=0/1", "warnings=0/1", "match_region=0/1", "match_regions=...", "mute_at=...", "location_at=...", "location_at_text=..."
   char* ctx = nullptr;
   char* line = strtok_r(buf, "\n", &ctx);
   while (line != nullptr) {
@@ -166,8 +169,16 @@ void botInit() {
 
         region = strtok_r(nullptr, ",", &region_ctx);
       }
+    } else if (strncmp(line, "mute_at=", 8) == 0) {
+      mute_at_hash_len = parseHexString(line + 8, mute_at_hash, sizeof(mute_at_hash));
+    } else if (strncmp(line, "location_at=", 12) == 0) {
+      location_at_hash_len = parseHexString(line + 12, location_at_hash, sizeof(location_at_hash));
+    } else if (strncmp(line, "location_at_text=", 17) == 0) {
+      strncpy(location_at_text, line + 17, sizeof(location_at_text) - 1);
+      location_at_text[sizeof(location_at_text) - 1] = '\0';
     } else if (strncmp(line, "home=", 5) == 0) {
-      home_repeater_hash_len = parseHexString(line + 5, home_repeater_hash, sizeof(home_repeater_hash));
+      // Backwards compatibility: home= is now mute_at=
+      mute_at_hash_len = parseHexString(line + 5, mute_at_hash, sizeof(mute_at_hash));
     }
     line = strtok_r(nullptr, "\n", &ctx);
   }
@@ -207,10 +218,17 @@ static bool botSaveState() {
     file.printf("\n");
   }
 
-  if (home_repeater_hash_len > 0) {
+  if (mute_at_hash_len > 0) {
     char hex_str[8];
-    bytesToHexString(home_repeater_hash, home_repeater_hash_len, hex_str, sizeof(hex_str));
-    file.printf("home=%s\n", hex_str);
+    bytesToHexString(mute_at_hash, mute_at_hash_len, hex_str, sizeof(hex_str));
+    file.printf("mute_at=%s\n", hex_str);
+  }
+
+  if (location_at_hash_len > 0) {
+    char hex_str[8];
+    bytesToHexString(location_at_hash, location_at_hash_len, hex_str, sizeof(hex_str));
+    file.printf("location_at=%s\n", hex_str);
+    file.printf("location_at_text=%s\n", location_at_text);
   }
 
   file.close();
@@ -340,11 +358,11 @@ static uint32_t hashSenderName(const char* name) {
   return hash;
 }
 
-// Check if last hop in path matches configured home repeater
-// Returns true if at home, false otherwise
-static bool isAtHomeRepeater(mesh::Packet* pkt) {
-  // Not configured - never at home
-  if (home_repeater_hash_len == 0) return false;
+// Check if last hop in path matches configured mute_at repeater
+// Returns true if at mute_at repeater, false otherwise
+static bool isAtMuteAtRepeater(mesh::Packet* pkt) {
+  // Not configured - never muted
+  if (mute_at_hash_len == 0) return false;
 
   uint8_t hop_count = pkt->getPathHashCount();
   if (hop_count == 0) return false;  // Direct connection, not via repeater
@@ -355,13 +373,44 @@ static bool isAtHomeRepeater(mesh::Packet* pkt) {
   // Compare configured hash with last hop
   // Compare only up to the minimum of config length and path hash size
   // This way "8dbb" matches both 1-byte "8d" and 2-byte "8dbb"
-  uint8_t compare_len = (home_repeater_hash_len < hash_size) ? home_repeater_hash_len : hash_size;
+  uint8_t compare_len = (mute_at_hash_len < hash_size) ? mute_at_hash_len : hash_size;
 
   for (uint8_t i = 0; i < compare_len; i++) {
-    if (home_repeater_hash[i] != last_hop[i]) return false;
+    if (mute_at_hash[i] != last_hop[i]) return false;
   }
 
   return true;
+}
+
+// Get effective location based on last hop
+// Returns location_at_text if last hop matches location_at_hash, otherwise global bot_location
+static const char* getEffectiveLocation(mesh::Packet* pkt) {
+  // Check if location_at is configured and last hop matches
+  if (location_at_hash_len > 0) {
+    uint8_t hop_count = pkt->getPathHashCount();
+    if (hop_count > 0) {
+      uint8_t hash_size = pkt->getPathHashSize();
+      const uint8_t* last_hop = &pkt->path[(hop_count - 1) * hash_size];
+
+      // Compare configured hash with last hop
+      uint8_t compare_len = (location_at_hash_len < hash_size) ? location_at_hash_len : hash_size;
+
+      bool matches = true;
+      for (uint8_t i = 0; i < compare_len; i++) {
+        if (location_at_hash[i] != last_hop[i]) {
+          matches = false;
+          break;
+        }
+      }
+
+      if (matches) {
+        return location_at_text;
+      }
+    }
+  }
+
+  // Fall back to global location
+  return bot_location;
 }
 
 static const char* getBotWarnings(uint8_t hash_size, bool has_region) {
@@ -420,11 +469,18 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
       }
     }
 
-    if (home_repeater_hash_len > 0) {
+    if (mute_at_hash_len > 0) {
       char hex_str[8];
-      bytesToHexString(home_repeater_hash, home_repeater_hash_len, hex_str, sizeof(hex_str));
+      bytesToHexString(mute_at_hash, mute_at_hash_len, hex_str, sizeof(hex_str));
       len = strlen(status);
-      snprintf(status + len, sizeof(status) - len, ", home: %s", hex_str);
+      snprintf(status + len, sizeof(status) - len, ", mute-at: %s", hex_str);
+    }
+
+    if (location_at_hash_len > 0) {
+      char hex_str[8];
+      bytesToHexString(location_at_hash, location_at_hash_len, hex_str, sizeof(hex_str));
+      len = strlen(status);
+      snprintf(status + len, sizeof(status) - len, ", location-at %s: %s", hex_str, location_at_text);
     }
 
     snprintf(reply, reply_len, "%s", status);
@@ -523,7 +579,32 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
     return true;
   }
 
+  if (strncmp(text, "!bot mute-at ", 13) == 0) {
+    const char* hash_str = text + 13;
+    uint8_t new_hash[3];
+    uint8_t new_len = parseHexString(hash_str, new_hash, sizeof(new_hash));
+
+    if (new_len == 0 || new_len > 3) {
+      snprintf(reply, reply_len, "Error: invalid hex string (use 1-3 bytes, e.g. '8dbb')");
+      return true;
+    }
+
+    memcpy(mute_at_hash, new_hash, new_len);
+    mute_at_hash_len = new_len;
+
+    if (!botSaveState()) {
+      snprintf(reply, reply_len, "Error: could not save bot state");
+      return true;
+    }
+
+    char hex_str[8];
+    bytesToHexString(mute_at_hash, mute_at_hash_len, hex_str, sizeof(hex_str));
+    snprintf(reply, reply_len, "OK - mute-at set to: %s", hex_str);
+    return true;
+  }
+
   if (strncmp(text, "!bot home ", 10) == 0) {
+    // Backwards compatibility: !bot home is now !bot mute-at
     const char* hash_str = text + 10;
     uint8_t new_hash[3];
     uint8_t new_len = parseHexString(hash_str, new_hash, sizeof(new_hash));
@@ -533,8 +614,8 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
       return true;
     }
 
-    memcpy(home_repeater_hash, new_hash, new_len);
-    home_repeater_hash_len = new_len;
+    memcpy(mute_at_hash, new_hash, new_len);
+    mute_at_hash_len = new_len;
 
     if (!botSaveState()) {
       snprintf(reply, reply_len, "Error: could not save bot state");
@@ -542,8 +623,63 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
     }
 
     char hex_str[8];
-    bytesToHexString(home_repeater_hash, home_repeater_hash_len, hex_str, sizeof(hex_str));
-    snprintf(reply, reply_len, "OK - home repeater set to: %s", hex_str);
+    bytesToHexString(mute_at_hash, mute_at_hash_len, hex_str, sizeof(hex_str));
+    snprintf(reply, reply_len, "OK - mute-at set to: %s (use !bot mute-at)", hex_str);
+    return true;
+  }
+
+  if (strncmp(text, "!bot location-at ", 17) == 0) {
+    const char* args = text + 17;
+
+    // Parse: <hash> <location>
+    // Find first space to separate hash from location
+    const char* space = strchr(args, ' ');
+    if (space == nullptr) {
+      snprintf(reply, reply_len, "Error: format is '!bot location-at <hash> <location>'");
+      return true;
+    }
+
+    // Extract hash
+    char hash_str[8];
+    size_t hash_len = space - args;
+    if (hash_len >= sizeof(hash_str)) {
+      snprintf(reply, reply_len, "Error: hash too long");
+      return true;
+    }
+    memcpy(hash_str, args, hash_len);
+    hash_str[hash_len] = '\0';
+
+    uint8_t new_hash[3];
+    uint8_t new_len = parseHexString(hash_str, new_hash, sizeof(new_hash));
+
+    if (new_len == 0 || new_len > 3) {
+      snprintf(reply, reply_len, "Error: invalid hex string (use 1-3 bytes, e.g. '8dbb')");
+      return true;
+    }
+
+    // Extract location (skip leading space)
+    const char* location = space + 1;
+    while (*location == ' ') location++;
+
+    if (*location == '\0') {
+      snprintf(reply, reply_len, "Error: location cannot be empty");
+      return true;
+    }
+
+    // Save hash and location
+    memcpy(location_at_hash, new_hash, new_len);
+    location_at_hash_len = new_len;
+    strncpy(location_at_text, location, sizeof(location_at_text) - 1);
+    location_at_text[sizeof(location_at_text) - 1] = '\0';
+
+    if (!botSaveState()) {
+      snprintf(reply, reply_len, "Error: could not save bot state");
+      return true;
+    }
+
+    char saved_hash[8];
+    bytesToHexString(location_at_hash, location_at_hash_len, saved_hash, sizeof(saved_hash));
+    snprintf(reply, reply_len, "OK - location-at %s: %s", saved_hash, location_at_text);
     return true;
   }
 
@@ -604,16 +740,44 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
     return true;
   }
 
-  if (strcmp(text, "!bot clear home") == 0) {
-    home_repeater_hash_len = 0;
-    memset(home_repeater_hash, 0, sizeof(home_repeater_hash));
+  if (strcmp(text, "!bot clear mute-at") == 0) {
+    mute_at_hash_len = 0;
+    memset(mute_at_hash, 0, sizeof(mute_at_hash));
 
     if (!botSaveState()) {
       snprintf(reply, reply_len, "Error: could not save bot state");
       return true;
     }
 
-    snprintf(reply, reply_len, "OK - home repeater cleared");
+    snprintf(reply, reply_len, "OK - mute-at cleared");
+    return true;
+  }
+
+  if (strcmp(text, "!bot clear location-at") == 0) {
+    location_at_hash_len = 0;
+    memset(location_at_hash, 0, sizeof(location_at_hash));
+    location_at_text[0] = '\0';
+
+    if (!botSaveState()) {
+      snprintf(reply, reply_len, "Error: could not save bot state");
+      return true;
+    }
+
+    snprintf(reply, reply_len, "OK - location-at cleared");
+    return true;
+  }
+
+  if (strcmp(text, "!bot clear home") == 0) {
+    // Backwards compatibility: clear home is now clear mute-at
+    mute_at_hash_len = 0;
+    memset(mute_at_hash, 0, sizeof(mute_at_hash));
+
+    if (!botSaveState()) {
+      snprintf(reply, reply_len, "Error: could not save bot state");
+      return true;
+    }
+
+    snprintf(reply, reply_len, "OK - mute-at cleared (use !bot clear mute-at)");
     return true;
   }
 
@@ -1484,7 +1648,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
   }
 
   const bool in_bot_channel = isBotChannel(channel_name);
-  const char* location = botGetLocation();
+  const char* location = getEffectiveLocation(pkt);
 
   // Public/other channels: casual replies only when reply-all is enabled
   if (!in_bot_channel) {
@@ -1495,7 +1659,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
 
     if (matchesTestOrProva(cmd)) {
       // Skip reply if at home repeater
-      if (isAtHomeRepeater(pkt)) {
+      if (isAtMuteAtRepeater(pkt)) {
         Serial.printf("[BOT] At home repeater, skipping reply\n");
         return false;
       }
@@ -1555,7 +1719,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
   }
 
   // Bot channels - skip all replies if at home repeater
-  if (isAtHomeRepeater(pkt)) {
+  if (isAtMuteAtRepeater(pkt)) {
     Serial.printf("[BOT] At home repeater, skipping reply\n");
     return false;
   }

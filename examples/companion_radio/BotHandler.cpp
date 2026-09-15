@@ -18,6 +18,7 @@ static constexpr const char* BOT_STATE_FILE = "/meshbot";
 static bool bot_enabled = false;
 static char bot_location[64] = {0};
 static bool reply_all_channels = false;
+static bool warnings_enabled = true;
 static uint8_t home_repeater_hash[3] = {0};
 static uint8_t home_repeater_hash_len = 0;
 
@@ -92,7 +93,7 @@ void botInit() {
   size_t len = file.readBytes(buf, sizeof(buf) - 1);
   file.close();
 
-  // Parse line by line: "enabled=0/1", "location=...", "reply_all=0/1", "home=..."
+  // Parse line by line: "enabled=0/1", "location=...", "reply_all=0/1", "warnings=0/1", "home=..."
   char* ctx = nullptr;
   char* line = strtok_r(buf, "\n", &ctx);
   while (line != nullptr) {
@@ -103,6 +104,8 @@ void botInit() {
       bot_location[sizeof(bot_location) - 1] = '\0';
     } else if (strncmp(line, "reply_all=", 10) == 0) {
       reply_all_channels = (line[10] == '1');
+    } else if (strncmp(line, "warnings=", 9) == 0) {
+      warnings_enabled = (line[9] == '1');
     } else if (strncmp(line, "home=", 5) == 0) {
       home_repeater_hash_len = parseHexString(line + 5, home_repeater_hash, sizeof(home_repeater_hash));
     }
@@ -124,6 +127,7 @@ static bool botSaveState() {
   file.printf("enabled=%d\n", bot_enabled ? 1 : 0);
   file.printf("location=%s\n", bot_location);
   file.printf("reply_all=%d\n", reply_all_channels ? 1 : 0);
+  file.printf("warnings=%d\n", warnings_enabled ? 1 : 0);
 
   if (home_repeater_hash_len > 0) {
     char hex_str[8];
@@ -145,6 +149,10 @@ const char* botGetLocation() {
 
 bool botGetReplyAll() {
   return reply_all_channels;
+}
+
+bool botGetWarningsEnabled() {
+  return warnings_enabled;
 }
 
 // Get or create reply state for a sender in non-bot channels
@@ -238,6 +246,10 @@ static bool isAtHomeRepeater(mesh::Packet* pkt) {
 }
 
 static const char* getBotWarnings(uint8_t hash_size, bool has_region) {
+  if (!warnings_enabled) {
+    return "";
+  }
+
   bool needs_bytes_warning = (hash_size == 1);
   bool needs_region_warning = !has_region;
 
@@ -270,6 +282,10 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
     size_t len = strlen(status);
     snprintf(status + len, sizeof(status) - len, ", reply-all: %s",
              reply_all_channels ? "on" : "off");
+
+    len = strlen(status);
+    snprintf(status + len, sizeof(status) - len, ", warnings: %s",
+             warnings_enabled ? "on" : "off");
 
     if (home_repeater_hash_len > 0) {
       char hex_str[8];
@@ -331,6 +347,26 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
       return true;
     }
     snprintf(reply, reply_len, "OK - reply-all disabled");
+    return true;
+  }
+
+  if (strcmp(text, "!bot warnings on") == 0) {
+    warnings_enabled = true;
+    if (!botSaveState()) {
+      snprintf(reply, reply_len, "Error: could not save bot state");
+      return true;
+    }
+    snprintf(reply, reply_len, "OK - warnings enabled");
+    return true;
+  }
+
+  if (strcmp(text, "!bot warnings off") == 0) {
+    warnings_enabled = false;
+    if (!botSaveState()) {
+      snprintf(reply, reply_len, "Error: could not save bot state");
+      return true;
+    }
+    snprintf(reply, reply_len, "OK - warnings disabled");
     return true;
   }
 

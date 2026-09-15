@@ -463,6 +463,18 @@ public:
       strcpy(buf, botGetMatchSenderRegion() ? "yes" : "no");
       display.drawTextRightAlign(display.width()-1, y, buf);
 
+      // Show configured regions if any
+      char regions[128];
+      botGetMatchRegions(regions, sizeof(regions));
+      if (regions[0] != '\0') {
+        y = y + 12;
+        display.setColor(UIColor::secondary_txt);
+        display.drawTextLeftAlign(0, y, "regions");
+        y = y + 12;
+        display.setColor(UIColor::primary_txt);
+        display.drawTextLeftAlign(0, y, regions);
+      }
+
       y = y + 12;
       display.setColor(UIColor::secondary_txt);
       display.drawTextCentered(display.width() / 2, y, "toggle: " PRESS_LABEL);

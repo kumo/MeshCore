@@ -32,6 +32,10 @@ bool botGetWarningsEnabled();
 // Check if matching sender's region is enabled
 bool botGetMatchSenderRegion();
 
+// Get configured match regions as comma-separated string (returns empty string if none)
+// Writes to provided buffer with max_len
+void botGetMatchRegions(char* buf, size_t max_len);
+
 // Handle !bot configuration commands (on/off/status)
 // Returns true if command was handled, false if not a bot config command
 bool botHandleConfig(const char* text, char* reply, size_t reply_len);

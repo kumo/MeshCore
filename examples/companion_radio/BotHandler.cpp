@@ -236,6 +236,34 @@ bool botGetMatchSenderRegion() {
   return match_sender_region;
 }
 
+void botGetMatchRegions(char* buf, size_t max_len) {
+  if (buf == nullptr || max_len == 0) return;
+
+  buf[0] = '\0';
+
+  if (match_region_count == 0) return;
+
+  size_t pos = 0;
+  for (uint8_t i = 0; i < match_region_count && pos < max_len - 1; i++) {
+    size_t region_len = strlen(match_region_names[i]);
+
+    // Add comma if not first region and there's space
+    if (i > 0 && pos + 1 < max_len - 1) {
+      buf[pos++] = ',';
+    }
+
+    // Copy region name if there's space
+    if (pos + region_len < max_len) {
+      strcpy(buf + pos, match_region_names[i]);
+      pos += region_len;
+    } else {
+      break;  // Not enough space
+    }
+  }
+
+  buf[pos] = '\0';
+}
+
 // Get or create reply state for a sender in non-bot channels
 // Returns nullptr if tracking is full and sender not found
 static ReplyState* getReplyState(uint32_t sender_id, uint32_t current_time) {

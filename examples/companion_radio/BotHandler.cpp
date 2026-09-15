@@ -283,6 +283,30 @@ void botGetMatchRegions(char* buf, size_t max_len) {
   buf[pos] = '\0';
 }
 
+void botGetMuteAtHash(char* buf, size_t max_len) {
+  if (buf == nullptr || max_len == 0) return;
+
+  buf[0] = '\0';
+
+  if (mute_at_hash_len > 0) {
+    bytesToHexString(mute_at_hash, mute_at_hash_len, buf, max_len);
+  }
+}
+
+void botGetLocationAtHash(char* buf, size_t max_len) {
+  if (buf == nullptr || max_len == 0) return;
+
+  buf[0] = '\0';
+
+  if (location_at_hash_len > 0) {
+    bytesToHexString(location_at_hash, location_at_hash_len, buf, max_len);
+  }
+}
+
+const char* botGetLocationAtText() {
+  return location_at_text;
+}
+
 // Get or create reply state for a sender in non-bot channels
 // Returns nullptr if tracking is full and sender not found
 static ReplyState* getReplyState(uint32_t sender_id, uint32_t current_time) {

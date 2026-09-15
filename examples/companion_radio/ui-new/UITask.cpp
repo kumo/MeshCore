@@ -437,9 +437,21 @@ public:
         y = y + 12;
         display.setColor(UIColor::secondary_txt);
         display.drawTextLeftAlign(0, y, "location");
-        y = y + 12;
         display.setColor(UIColor::primary_txt);
-        display.drawTextLeftAlign(0, y, location);
+        display.drawTextRightAlign(display.width()-1, y, location);
+      }
+
+      // Show location-at if configured
+      char loc_at_hash[8];
+      botGetLocationAtHash(loc_at_hash, sizeof(loc_at_hash));
+      const char* loc_at_text = botGetLocationAtText();
+      if (loc_at_hash[0] != '\0' && loc_at_text != NULL && loc_at_text[0] != '\0') {
+        y = y + 12;
+        snprintf(buf, sizeof(buf), "loc-at %s", loc_at_hash);
+        display.setColor(UIColor::secondary_txt);
+        display.drawTextLeftAlign(0, y, buf);
+        display.setColor(UIColor::primary_txt);
+        display.drawTextRightAlign(display.width()-1, y, loc_at_text);
       }
 
       y = y + 12;
@@ -470,9 +482,19 @@ public:
         y = y + 12;
         display.setColor(UIColor::secondary_txt);
         display.drawTextLeftAlign(0, y, "regions");
-        y = y + 12;
         display.setColor(UIColor::primary_txt);
-        display.drawTextLeftAlign(0, y, regions);
+        display.drawTextRightAlign(display.width()-1, y, regions);
+      }
+
+      // Show mute-at if configured
+      char mute_at_hash[8];
+      botGetMuteAtHash(mute_at_hash, sizeof(mute_at_hash));
+      if (mute_at_hash[0] != '\0') {
+        y = y + 12;
+        display.setColor(UIColor::secondary_txt);
+        display.drawTextLeftAlign(0, y, "mute-at");
+        display.setColor(UIColor::primary_txt);
+        display.drawTextRightAlign(display.width()-1, y, mute_at_hash);
       }
 
       y = y + 12;

@@ -36,6 +36,17 @@ bool botGetMatchSenderRegion();
 // Writes to provided buffer with max_len
 void botGetMatchRegions(char* buf, size_t max_len);
 
+// Get mute-at hash as hex string (returns empty string if not set)
+// Writes to provided buffer with max_len
+void botGetMuteAtHash(char* buf, size_t max_len);
+
+// Get location-at hash as hex string (returns empty string if not set)
+// Writes to provided buffer with max_len
+void botGetLocationAtHash(char* buf, size_t max_len);
+
+// Get location-at text (returns empty string if not set)
+const char* botGetLocationAtText();
+
 // Handle !bot configuration commands (on/off/status)
 // Returns true if command was handled, false if not a bot config command
 bool botHandleConfig(const char* text, char* reply, size_t reply_len);

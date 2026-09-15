@@ -102,6 +102,10 @@ public:
 
   int  getRecentlyHeard(AdvertPath dest[], int max_num);
 
+  // Send group message with specific transport codes (for matching sender's region)
+  bool sendGroupMessageWithTransportCodes(uint32_t timestamp, mesh::GroupChannel& channel, const char* sender_name,
+                                          const char* text, int text_len, const uint16_t* transport_codes);
+
 protected:
   float getAirtimeBudgetFactor() const override;
   int getInterferenceThreshold() const override;

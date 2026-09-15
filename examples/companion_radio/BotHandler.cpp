@@ -19,6 +19,7 @@ static bool bot_enabled = false;
 static char bot_location[64] = {0};
 static bool reply_all_channels = false;
 static bool warnings_enabled = true;
+static bool match_sender_region = false;
 static uint8_t home_repeater_hash[3] = {0};
 static uint8_t home_repeater_hash_len = 0;
 
@@ -93,7 +94,7 @@ void botInit() {
   size_t len = file.readBytes(buf, sizeof(buf) - 1);
   file.close();
 
-  // Parse line by line: "enabled=0/1", "location=...", "reply_all=0/1", "warnings=0/1", "home=..."
+  // Parse line by line: "enabled=0/1", "location=...", "reply_all=0/1", "warnings=0/1", "match_region=0/1", "home=..."
   char* ctx = nullptr;
   char* line = strtok_r(buf, "\n", &ctx);
   while (line != nullptr) {
@@ -106,6 +107,8 @@ void botInit() {
       reply_all_channels = (line[10] == '1');
     } else if (strncmp(line, "warnings=", 9) == 0) {
       warnings_enabled = (line[9] == '1');
+    } else if (strncmp(line, "match_region=", 13) == 0) {
+      match_sender_region = (line[13] == '1');
     } else if (strncmp(line, "home=", 5) == 0) {
       home_repeater_hash_len = parseHexString(line + 5, home_repeater_hash, sizeof(home_repeater_hash));
     }
@@ -128,6 +131,7 @@ static bool botSaveState() {
   file.printf("location=%s\n", bot_location);
   file.printf("reply_all=%d\n", reply_all_channels ? 1 : 0);
   file.printf("warnings=%d\n", warnings_enabled ? 1 : 0);
+  file.printf("match_region=%d\n", match_sender_region ? 1 : 0);
 
   if (home_repeater_hash_len > 0) {
     char hex_str[8];
@@ -153,6 +157,10 @@ bool botGetReplyAll() {
 
 bool botGetWarningsEnabled() {
   return warnings_enabled;
+}
+
+bool botGetMatchSenderRegion() {
+  return match_sender_region;
 }
 
 // Get or create reply state for a sender in non-bot channels
@@ -287,6 +295,10 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
     snprintf(status + len, sizeof(status) - len, ", warnings: %s",
              warnings_enabled ? "on" : "off");
 
+    len = strlen(status);
+    snprintf(status + len, sizeof(status) - len, ", match-region: %s",
+             match_sender_region ? "on" : "off");
+
     if (home_repeater_hash_len > 0) {
       char hex_str[8];
       bytesToHexString(home_repeater_hash, home_repeater_hash_len, hex_str, sizeof(hex_str));
@@ -367,6 +379,26 @@ bool botHandleConfig(const char* text, char* reply, size_t reply_len) {
       return true;
     }
     snprintf(reply, reply_len, "OK - warnings disabled");
+    return true;
+  }
+
+  if (strcmp(text, "!bot match-region on") == 0) {
+    match_sender_region = true;
+    if (!botSaveState()) {
+      snprintf(reply, reply_len, "Error: could not save bot state");
+      return true;
+    }
+    snprintf(reply, reply_len, "OK - match-region enabled");
+    return true;
+  }
+
+  if (strcmp(text, "!bot match-region off") == 0) {
+    match_sender_region = false;
+    if (!botSaveState()) {
+      snprintf(reply, reply_len, "Error: could not save bot state");
+      return true;
+    }
+    snprintf(reply, reply_len, "OK - match-region disabled");
     return true;
   }
 
@@ -1027,7 +1059,7 @@ static bool isBotChannel(const char* channel_name) {
 }
 
 static bool sendCasualReply(MyMesh& mesh, mesh::GroupChannel& channel,
-                            const char* sender_name, const char* text) {
+                            const char* sender_name, const char* text, mesh::Packet* pkt) {
   char reply[MAX_TEXT_LEN + 1];
   if (sender_name != nullptr && sender_name[0] != '\0') {
     snprintf(reply, sizeof(reply), "@[%s] %s 🤖", sender_name, text);
@@ -1036,16 +1068,32 @@ static bool sendCasualReply(MyMesh& mesh, mesh::GroupChannel& channel,
   }
 
   uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
-  if (mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply))) {
-    Serial.printf("[BOT] Sent casual reply\n");
-    return true;
+  bool success = false;
+
+  // Check if we should match sender's region
+  Serial.printf("[BOT] Casual reply: match_sender_region=%d, pkt=%p, hasTransportCodes=%d\n",
+                match_sender_region, pkt, pkt ? pkt->hasTransportCodes() : 0);
+  if (match_sender_region && pkt != nullptr && pkt->hasTransportCodes()) {
+    // Use sender's transport codes
+    Serial.printf("[BOT] Using sender's transport codes: %04x %04x\n",
+                  pkt->transport_codes[0], pkt->transport_codes[1]);
+    success = mesh.sendGroupMessageWithTransportCodes(timestamp, channel, mesh.getNodeName(),
+                                                      reply, strlen(reply),
+                                                      pkt->transport_codes);
+    Serial.printf("[BOT] Sent casual reply with sender's region\n");
+  } else {
+    // Use device's default configuration
+    success = mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply));
+    Serial.printf("[BOT] Sent casual reply with device config (match=%d, pkt=%p, codes=%d)\n",
+                  match_sender_region, pkt, pkt ? pkt->hasTransportCodes() : 0);
   }
-  return false;
+
+  return success;
 }
 
 static bool sendBotReply(MyMesh& mesh, const char* channel_name, mesh::GroupChannel& channel,
                          const char* sender_name, const char* body,
-                         const char* location, const char* warnings) {
+                         const char* location, const char* warnings, mesh::Packet* pkt) {
   char reply[MAX_TEXT_LEN + 1];
 
   // Assemble: @[sender] {body}\n{location} 🤖\n{warnings}
@@ -1057,11 +1105,27 @@ static bool sendBotReply(MyMesh& mesh, const char* channel_name, mesh::GroupChan
   }
 
   uint32_t timestamp = mesh.getRTCClock()->getCurrentTime();
-  if (mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply))) {
-    Serial.printf("[BOT] Sent reply to channel %s\n", channel_name);
-    return true;
+  bool success = false;
+
+  // Check if we should match sender's region
+  Serial.printf("[BOT] match_sender_region=%d, pkt=%p, hasTransportCodes=%d\n",
+                match_sender_region, pkt, pkt ? pkt->hasTransportCodes() : 0);
+  if (match_sender_region && pkt != nullptr && pkt->hasTransportCodes()) {
+    // Use sender's transport codes
+    Serial.printf("[BOT] Using sender's transport codes: %04x %04x\n",
+                  pkt->transport_codes[0], pkt->transport_codes[1]);
+    success = mesh.sendGroupMessageWithTransportCodes(timestamp, channel, mesh.getNodeName(),
+                                                      reply, strlen(reply),
+                                                      pkt->transport_codes);
+    Serial.printf("[BOT] Sent reply to channel %s with sender's region\n", channel_name);
+  } else {
+    // Use device's default configuration
+    success = mesh.sendGroupMessage(timestamp, channel, mesh.getNodeName(), reply, strlen(reply));
+    Serial.printf("[BOT] Sent reply to channel %s with device config (match=%d, pkt=%p, codes=%d)\n",
+                  channel_name, match_sender_region, pkt, pkt ? pkt->hasTransportCodes() : 0);
   }
-  return false;
+
+  return success;
 }
 
 bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel& channel,
@@ -1150,7 +1214,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
           snprintf(body, sizeof(body), "%d %s, %s", hop_count,
                    hop_count == 1 ? "salto" : "salti", location);
         }
-        sendCasualReply(mesh, channel, sender_name, body);
+        sendCasualReply(mesh, channel, sender_name, body, pkt);
         state->reply_count++;
         state->last_reply_time = current_time;
         Serial.printf("[BOT] First reply to %s\n", sender_name);
@@ -1166,7 +1230,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
           snprintf(body, sizeof(body), "%d %s, %s (scrivi nel canale #bot o #test)",
                    hop_count, hop_count == 1 ? "salto" : "salti", location);
         }
-        sendCasualReply(mesh, channel, sender_name, body);
+        sendCasualReply(mesh, channel, sender_name, body, pkt);
         state->reply_count++;
         state->last_reply_time = current_time;
         Serial.printf("[BOT] Second reply to %s with nudge\n", sender_name);
@@ -1219,7 +1283,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       snprintf(body, sizeof(body), "… %d hops … 🏓 pong!", hop_count);
     }
 
-    sendBotReply(mesh, channel_name, channel, sender_name, body, nullptr, "");
+    sendBotReply(mesh, channel_name, channel, sender_name, body, nullptr, "", pkt);
     return true;
   }
 
@@ -1246,7 +1310,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       buildHopSummary(body, sizeof(body), mesh, pkt);
     }
 
-    sendBotReply(mesh, channel_name, channel, sender_name, body, test_location, warnings);
+    sendBotReply(mesh, channel_name, channel, sender_name, body, test_location, warnings, pkt);
     return true;
   }
 
@@ -1271,7 +1335,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       buildHopPathWithNames(body, sizeof(body), mesh, pkt, path_budget);
     }
 
-    sendBotReply(mesh, channel_name, channel, sender_name, body, path_location, warnings);
+    sendBotReply(mesh, channel_name, channel, sender_name, body, path_location, warnings, pkt);
 
     // Debug logging for 2/3-byte hashes
     if (hash_size == 2 || hash_size == 3) {
@@ -1305,7 +1369,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
 
     char body[MAX_TEXT_LEN];
     snprintf(body, sizeof(body), "Echo: %s", echo_text);
-    sendBotReply(mesh, channel_name, channel, sender_name, body, nullptr, "");
+    sendBotReply(mesh, channel_name, channel, sender_name, body, nullptr, "", pkt);
     return true;
   }
 

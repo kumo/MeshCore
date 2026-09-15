@@ -456,8 +456,16 @@ public:
       strcpy(buf, botGetWarningsEnabled() ? "yes" : "no");
       display.drawTextRightAlign(display.width()-1, y, buf);
 
+      y = y + 12;
       display.setColor(UIColor::secondary_txt);
-      display.drawTextCentered(display.width() / 2, 64 - 11, "toggle: " PRESS_LABEL);
+      display.drawTextLeftAlign(0, y, "match region");
+      display.setColor(UIColor::primary_txt);
+      strcpy(buf, botGetMatchSenderRegion() ? "yes" : "no");
+      display.drawTextRightAlign(display.width()-1, y, buf);
+
+      y = y + 12;
+      display.setColor(UIColor::secondary_txt);
+      display.drawTextCentered(display.width() / 2, y, "toggle: " PRESS_LABEL);
     } else if (_page == HomePage::SHUTDOWN) {
       display.setColor(UIColor::corp_blue);
       display.setTextSize(1);

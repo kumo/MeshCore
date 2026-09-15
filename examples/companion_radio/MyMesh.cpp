@@ -523,6 +523,30 @@ void MyMesh::sendFloodScoped(const mesh::GroupChannel& channel, mesh::Packet* pk
   }
 }
 
+bool MyMesh::sendGroupMessageWithTransportCodes(uint32_t timestamp, mesh::GroupChannel& channel,
+                                                const char* sender_name, const char* text, int text_len,
+                                                const uint16_t* transport_codes) {
+  uint8_t temp[5+MAX_TEXT_LEN+32];
+  memcpy(temp, &timestamp, 4);
+  temp[4] = 0;  // TXT_TYPE_PLAIN
+
+  sprintf((char*)&temp[5], "%s: ", sender_name);
+  char* ep = strchr((char*)&temp[5], 0);
+  int prefix_len = ep - (char*)&temp[5];
+
+  if (text_len + prefix_len > MAX_TEXT_LEN) text_len = MAX_TEXT_LEN - prefix_len;
+  memcpy(ep, text, text_len);
+  ep[text_len] = 0;  // null terminator
+
+  auto pkt = createGroupDatagram(PAYLOAD_TYPE_GRP_TXT, channel, temp, 5 + prefix_len + text_len);
+  if (pkt) {
+    // Send with specific transport codes (cast away const since sendFlood modifies internal packet state)
+    sendFlood(pkt, const_cast<uint16_t*>(transport_codes), 0, _prefs.path_hash_mode + 1);
+    return true;
+  }
+  return false;
+}
+
 void MyMesh::onMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t sender_timestamp,
                            const char *text) {
   markConnectionActive(from); // in case this is from a server, and we have a connection

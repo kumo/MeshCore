@@ -45,6 +45,7 @@ static uint8_t reply_tracking_count = 0;
 
 // Forward declarations
 static void generateRegionKeys();
+static const TransportKey* extractDynamicRegion(const char* message);
 static const TransportKey* matchIncomingRegion(mesh::Packet* pkt);
 
 // Convert hex char to value (0-15), returns 255 on error
@@ -1296,7 +1297,8 @@ static bool sendCasualReply(MyMesh& mesh, mesh::GroupChannel& channel,
 
 static bool sendBotReply(MyMesh& mesh, const char* channel_name, mesh::GroupChannel& channel,
                          const char* sender_name, const char* body,
-                         const char* location, const char* warnings, mesh::Packet* pkt) {
+                         const char* location, const char* warnings, mesh::Packet* pkt,
+                         const char* original_message = nullptr) {
   char reply[MAX_TEXT_LEN + 1];
 
   // Assemble: @[sender] {body}\n{location} 🤖\n{warnings}
@@ -1310,8 +1312,13 @@ static bool sendBotReply(MyMesh& mesh, const char* channel_name, mesh::GroupChan
   uint32_t timestamp = mesh.getRTCClock()->getCurrentTimeUnique();
   bool success = false;
 
-  // Try to match incoming region if configured
-  const TransportKey* matched_key = matchIncomingRegion(pkt);
+  // Try dynamic region extraction first (from message like "test it-lom-mi")
+  const TransportKey* matched_key = extractDynamicRegion(original_message);
+
+  // If no dynamic region, try matching incoming packet's region
+  if (matched_key == nullptr) {
+    matched_key = matchIncomingRegion(pkt);
+  }
 
   if (matched_key != nullptr) {
     // Create packet manually to use specific region key (NessoN1 approach)
@@ -1341,6 +1348,60 @@ static bool sendBotReply(MyMesh& mesh, const char* channel_name, mesh::GroupChan
   }
 
   return success;
+}
+
+// Extract dynamic region from message text (e.g., "test it-lom-mi" → "it-lom-mi")
+// Returns generated TransportKey pointer, or nullptr if no valid region found
+// Only works for regions starting with "it-" (Italy-centric)
+static const TransportKey* extractDynamicRegion(const char* message) {
+  if (message == nullptr) return nullptr;
+
+  // Skip the command word (test/prova/!test/!prova)
+  const char* text = message;
+  if (*text == '!') text++;  // Skip ! if present
+
+  // Skip "test" or "prova"
+  if (strncasecmp(text, "test", 4) == 0) {
+    text += 4;
+  } else if (strncasecmp(text, "prova", 5) == 0) {
+    text += 5;
+  } else {
+    return nullptr;  // Not a test/prova command
+  }
+
+  // Skip digits if present (test1, test2, etc.)
+  while (*text >= '0' && *text <= '9') text++;
+
+  // Skip whitespace
+  while (*text == ' ' || *text == '\t') text++;
+
+  // Check if starts with "it-"
+  if (strncasecmp(text, "it-", 3) != 0) {
+    return nullptr;  // Not an Italian region
+  }
+
+  // Extract region name (up to space or end of string)
+  char region_name[32];
+  size_t i = 0;
+  while (text[i] != '\0' && text[i] != ' ' && text[i] != '\t' && i < sizeof(region_name) - 1) {
+    region_name[i] = text[i];
+    i++;
+  }
+  region_name[i] = '\0';
+
+  if (i == 0) return nullptr;  // Empty region name
+
+  // Generate TransportKey from region name (SHA256 of "#regionname")
+  static TransportKey dynamic_key;
+  char hash_input[64];
+  snprintf(hash_input, sizeof(hash_input), "#%s", region_name);
+
+  SHA256 sha;
+  sha.update(hash_input, strlen(hash_input));
+  sha.finalize(dynamic_key.key, sizeof(dynamic_key.key));
+
+  Serial.printf("[BOT] Extracted dynamic region: '%s'\n", region_name);
+  return &dynamic_key;
 }
 
 // Try to match incoming packet's region against configured regions
@@ -1551,7 +1612,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       buildHopSummary(body, sizeof(body), mesh, pkt);
     }
 
-    sendBotReply(mesh, channel_name, channel, sender_name, body, test_location, warnings, pkt);
+    sendBotReply(mesh, channel_name, channel, sender_name, body, test_location, warnings, pkt, cmd);
     return true;
   }
 

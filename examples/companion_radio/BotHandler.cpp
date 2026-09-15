@@ -1356,20 +1356,24 @@ static bool sendBotReply(MyMesh& mesh, const char* channel_name, mesh::GroupChan
 static const TransportKey* extractDynamicRegion(const char* message) {
   if (message == nullptr) return nullptr;
 
-  // Skip the command word (test/prova/!test/!prova)
+  // Skip the command word (test/prova/ping/path with optional !)
   const char* text = message;
   if (*text == '!') text++;  // Skip ! if present
 
-  // Skip "test" or "prova"
+  // Skip command word
   if (strncasecmp(text, "test", 4) == 0) {
     text += 4;
   } else if (strncasecmp(text, "prova", 5) == 0) {
     text += 5;
+  } else if (strncasecmp(text, "ping", 4) == 0) {
+    text += 4;
+  } else if (strncasecmp(text, "path", 4) == 0) {
+    text += 4;
   } else {
-    return nullptr;  // Not a test/prova command
+    return nullptr;  // Not a recognized command
   }
 
-  // Skip digits if present (test1, test2, etc.)
+  // Skip digits if present (test1, ping2, etc.)
   while (*text >= '0' && *text <= '9') text++;
 
   // Skip whitespace
@@ -1585,7 +1589,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       snprintf(body, sizeof(body), "… %d hops … 🏓 pong!", hop_count);
     }
 
-    sendBotReply(mesh, channel_name, channel, sender_name, body, nullptr, "", pkt);
+    sendBotReply(mesh, channel_name, channel, sender_name, body, nullptr, "", pkt, cmd);
     return true;
   }
 
@@ -1636,7 +1640,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
       buildHopPathWithNames(body, sizeof(body), mesh, pkt, path_budget);
     }
 
-    sendBotReply(mesh, channel_name, channel, sender_name, body, path_location, warnings, pkt);
+    sendBotReply(mesh, channel_name, channel, sender_name, body, path_location, warnings, pkt, cmd);
 
     // Debug logging for 2/3-byte hashes
     if (hash_size == 2 || hash_size == 3) {
@@ -1670,7 +1674,7 @@ bool botHandleChannel(MyMesh& mesh, const char* channel_name, mesh::GroupChannel
 
     char body[MAX_TEXT_LEN];
     snprintf(body, sizeof(body), "Echo: %s", echo_text);
-    sendBotReply(mesh, channel_name, channel, sender_name, body, nullptr, "", pkt);
+    sendBotReply(mesh, channel_name, channel, sender_name, body, nullptr, "", pkt, cmd);
     return true;
   }
 
